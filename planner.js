@@ -335,10 +335,18 @@ async function init(){
   if(midlongNorm.changed || !rawMidlong) await storageSet('midLongTasks', STATE.midlong);
   const normalized = normalizeTasks(tasks);
   STATE.tasks = normalized.tasks;
+
+  // 이전 버전 버그로, 예시(더미) 회의에서 잘못 자동 생성된 업무가 저장되어 있을 수 있어요.
+  // 제목이 예시 회의 제목과 똑같으면서 회의 연동으로 생성된 표시가 있는 업무는 정리합니다.
+  const DEMO_MEETING_TITLES = new Set(DEFAULT_MEETINGS.map(m => m.title));
+  const beforeCleanCount = STATE.tasks.length;
+  STATE.tasks = STATE.tasks.filter(t => !(t.fromMeetingKey && DEMO_MEETING_TITLES.has(t.text)));
+  const demoCleaned = STATE.tasks.length !== beforeCleanCount;
+
   // ⚠️ 실제로 동기화된 회의가 있을 때만 업무를 자동 생성합니다.
   // (예시/더미 회의 데이터가 진짜 업무처럼 저장되거나 클라우드에 올라가면 안 되니까요)
   const meetingTasksChanged = hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
-  if(normalized.changed || !rawTasks || meetingTasksChanged) await storageSet('personalTasks', STATE.tasks);
+  if(normalized.changed || !rawTasks || meetingTasksChanged || demoCleaned) await storageSet('personalTasks', STATE.tasks);
   STATE.leave = toLeaveMap((flexSynced && Array.isArray(flexSynced.leave)) ? flexSynced.leave : leaveFallback);
   STATE.team = (flexSynced && Array.isArray(flexSynced.team) && flexSynced.team.length) ? flexSynced.team : teamFallback;
 
@@ -1756,6 +1764,12 @@ if(typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged){
     if(changes.personalTasks || changes.midLongTasks || changes.fursysPlannerData || changes.flexLeaveData || changes.annualLeave || changes.teamSchedule){
       init();
     }
+    // background.js가 직접 저장한 경우(스마트오피스/Flex 동기화)도 클라우드에 반영합니다.
+    if(typeof scheduleCloudPush === 'function'){
+      ['personalTasks','midLongTasks','personalEvents','userProfile','fursysPlannerData','flexLeaveData'].forEach(k=>{
+        if(changes[k]) scheduleCloudPush(k);
+      });
+    }
   });
 }
 
@@ -1771,7 +1785,7 @@ const FIREBASE_API_KEY = "AIzaSyBLqYfI7c0bFpBhsKQxpvck5gR-6ZqKCL4";
 const FIRESTORE_DOC_URL =
   `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/planners/girang?key=${FIREBASE_API_KEY}`;
 
-const CLOUD_SYNC_KEYS = ['personalTasks', 'midLongTasks', 'personalEvents', 'userProfile'];
+const CLOUD_SYNC_KEYS = ['personalTasks', 'midLongTasks', 'personalEvents', 'userProfile', 'fursysPlannerData', 'flexLeaveData'];
 let lastAppliedCloudTimestamp = null;
 let cloudPushTimer = null;
 
