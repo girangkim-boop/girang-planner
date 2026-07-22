@@ -323,7 +323,9 @@ async function init(){
   const teamFallback = await storageGet('teamSchedule', DEFAULT_TEAM);
   const personalEvents = await storageGet('personalEvents', []);
 
-  STATE.syncedMeetings = (synced && synced.meetings && synced.meetings.length) ? synced.meetings : DEFAULT_MEETINGS;
+  const hasRealSyncedMeetings = !!(synced && synced.meetings && synced.meetings.length);
+  STATE.hasRealSyncedMeetings = hasRealSyncedMeetings;
+  STATE.syncedMeetings = hasRealSyncedMeetings ? synced.meetings : DEFAULT_MEETINGS;
   STATE.personalEvents = personalEvents;
   recomputeMeetings();
   const midlongNorm = normalizeMidLong(midlong);
@@ -333,7 +335,9 @@ async function init(){
   if(midlongNorm.changed || !rawMidlong) await storageSet('midLongTasks', STATE.midlong);
   const normalized = normalizeTasks(tasks);
   STATE.tasks = normalized.tasks;
-  const meetingTasksChanged = syncTasksFromMeetings();
+  // ⚠️ 실제로 동기화된 회의가 있을 때만 업무를 자동 생성합니다.
+  // (예시/더미 회의 데이터가 진짜 업무처럼 저장되거나 클라우드에 올라가면 안 되니까요)
+  const meetingTasksChanged = hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
   if(normalized.changed || !rawTasks || meetingTasksChanged) await storageSet('personalTasks', STATE.tasks);
   STATE.leave = toLeaveMap((flexSynced && Array.isArray(flexSynced.leave)) ? flexSynced.leave : leaveFallback);
   STATE.team = (flexSynced && Array.isArray(flexSynced.team) && flexSynced.team.length) ? flexSynced.team : teamFallback;
@@ -1850,7 +1854,7 @@ init();
 
 // 페이지를 오래 켜두는 동안에도, 5분마다 '시간이 지난 회의' 자동 체크 및 영어 한마디 교체 시점을 다시 확인합니다.
 setInterval(async ()=>{
-  const changed = syncTasksFromMeetings();
+  const changed = STATE.hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
   if(changed){
     await storageSet('personalTasks', STATE.tasks);
     renderTasks();
