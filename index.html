@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Girang's daily planner</title>
+<link rel="preconnect" href="https://fastly.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+  :root{
+    --bg:#EEF7FB;
+    --card:#FFFFFF;
+    --ink:#3D5266;
+    --muted:#8FA6B3;
+    --line:#DCEEF5;
+    --lavender:#BFE3F5;
+    --lavender-deep:#5FA8D3;
+    --mint:#C9EAD1;
+    --mint-deep:#5FAE74;
+    --peach:#FFD9A8;
+    --peach-deep:#E8973D;
+    --sky:#D8EEF7;
+    --sky-deep:#5FA8D3;
+    --coral:#FF8B7A;
+    --holiday:#FFAFA0;
+    --radius:18px;
+    --shadow: 0 6px 20px rgba(70, 120, 150, 0.10);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Pretendard', -apple-system, "Apple SD Gothic Neo", sans-serif;
+    background:
+      radial-gradient(circle at 8% 8%, #DCEEF9 0%, transparent 40%),
+      radial-gradient(circle at 95% 15%, #DFF3E6 0%, transparent 35%),
+      var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+    padding:24px;
+  }
+  .topbar{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    margin-bottom:20px;
+    padding:0 6px;
+  }
+  .title-row{
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+  }
+  .topbar h1{
+    font-size:26px;
+    font-weight:800;
+    margin:0;
+    letter-spacing:-0.5px;
+  }
+  .topbar .date{
+    font-size:14px;
+    color:var(--muted);
+    font-weight:600;
+  }
+  .sync-status{
+    font-size:12px;
+    color:var(--mint-deep);
+    background:#EAFBF3;
+    padding:5px 12px;
+    border-radius:999px;
+    font-weight:700;
+    cursor:default;
+  }
+  .topbar-right{
+    display:flex; align-items:center; gap:10px;
+  }
+  .data-io{ display:flex; gap:6px; }
+  .data-io-btn{
+    border:none; background:#F5EEE9; color:var(--muted);
+    font-size:11px; font-weight:800; border-radius:999px; padding:6px 12px; cursor:pointer;
+  }
+  .data-io-btn:hover{ filter:brightness(0.96); color:var(--ink); }
+  .board{
+    display:grid;
+    grid-template-columns: 1.1fr 1.8fr 0.5fr 1fr;
+    gap:18px;
+    align-items:start;
+  }
+  @media (max-width: 1100px){
+    .board{grid-template-columns: 1fr 1fr;}
+  }
+  @media (max-width: 640px){
+    .board{grid-template-columns: 1fr;}
+  }
+  .col{display:flex; flex-direction:column; gap:18px;}
+  .card{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    padding:18px 18px 20px;
+    border:1px solid var(--line);
+  }
+  .card h2{
+    font-size:14px;
+    margin:0 0 12px;
+    font-weight:800;
+    display:flex;
+    align-items:center;
+    gap:6px;
+    color:var(--ink);
+  }
+  .add-event-btn{
+    margin-left:auto;
+    border:none; background:var(--lavender); color:#1F5C82;
+    font-size:11px; font-weight:800; border-radius:999px; padding:5px 11px; cursor:pointer;
+  }
+  .add-event-btn:hover{ filter:brightness(0.97); }
+  .card h2 .dot{
+    width:8px;height:8px;border-radius:50%;
+    display:inline-block;
+  }
+  /* 회의 목록 */
+  .meeting-item{
+    display:flex;
+    gap:10px;
+    padding:9px 10px;
+    border-radius:12px;
+    background:#F5F6FF;
+    margin-bottom:8px;
+    align-items:center;
+  }
+  .meeting-item .time{
+    font-size:12px; font-weight:800; color:var(--lavender-deep);
+    min-width:78px;
+  }
+  .meeting-item .title{font-size:13px; font-weight:600;}
+  .empty{
+    font-size:12px;
+    color:var(--muted);
+    padding:10px;
+    text-align:center;
+    background:#FAFAFD;
+    border-radius:10px;
+  }
+  /* 업무 목록 */
+  .task-item{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:8px 6px;
+    border-bottom:1px dashed var(--line);
+    font-size:13px;
+    cursor:pointer;
+  }
+  .task-item:last-child{border-bottom:none;}
+  .task-item input{width:16px;height:16px;accent-color:var(--mint-deep);cursor:pointer;}
+  .task-item.done label{color:var(--muted); text-decoration:line-through;}
+  .task-item label{flex:1; cursor:pointer;}
+  .priority-dot{
+    width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0;
+  }
+  .carry-tag{
+    font-size:10.5px; color:var(--coral); font-weight:700; margin-left:5px;
+  }
+  .due-tag{
+    font-size:10.5px; color:var(--lavender-deep); font-weight:700; margin-left:5px;
+  }
+  .due-tag.overdue{ color:var(--coral); }
+  .midlong-tag{
+    display:inline-block; font-size:10px; font-weight:800; color:var(--peach-deep);
+    background:#FFF3E5; padding:2px 7px; border-radius:999px; margin-bottom:3px;
+  }
+  .memo-mark{ margin-left:4px; font-size:11px; }
+  .task-delete-btn{
+    border:none; background:transparent; color:var(--muted);
+    font-size:12px; cursor:pointer; padding:2px 6px; border-radius:6px;
+    opacity:0.5; transition:opacity 0.15s, background 0.15s, color 0.15s;
+  }
+  .task-item:hover .task-delete-btn{ opacity:1; }
+  .task-delete-btn:hover{ background:#FFEFF2; color:var(--coral); }
+  .task-add{
+    display:flex; flex-wrap:nowrap; gap:6px; margin-top:10px;
+  }
+  .task-add input#newTaskInput{
+    flex:1 1 auto;
+    min-width:0;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 10px;
+    font-size:13px;
+    font-family:inherit;
+  }
+  .task-add select{
+    flex:0 0 68px;
+    width:68px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 2px;
+    font-size:11px;
+    font-family:inherit;
+    background:#fff;
+    color:var(--ink);
+  }
+  .task-add input[type=date]{
+    flex:0 0 82px;
+    width:82px;
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:8px 3px;
+    font-size:10.5px;
+    font-family:inherit;
+    color:var(--muted);
+  }
+  .task-add button, .btn{
+    flex:0 0 auto;
+    white-space:nowrap;
+    border:none;
+    background:var(--lavender);
+    color:#1F5C82;
+    font-weight:800;
+    border-radius:10px;
+    padding:8px 12px;
+    font-size:13px;
+    cursor:pointer;
+  }
+  .task-add button:hover, .btn:hover{ filter:brightness(0.97); }
+  /* 업무 상세 모달 */
+  .modal-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(95,168,211,0.20);
+    backdrop-filter:blur(2px);
+    z-index:100;
+    align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .modal-panel{
+    background:
+      radial-gradient(circle at 100% 0%, #E4F2FA 0%, transparent 45%),
+      #fff;
+    border-radius:20px;
+    box-shadow:0 20px 50px rgba(85,90,150,0.25);
+    border:1px solid var(--line);
+    width:100%; max-width:420px;
+    padding:22px;
+    max-height:88vh;
+    overflow-y:auto;
+  }
+  .modal-panel h3{
+    margin:0 0 16px; font-size:16px; font-weight:800;
+    display:flex; align-items:center; gap:7px;
+  }
+  .modal-panel h3::before{
+    content:''; width:9px; height:9px; border-radius:50%;
+    background:var(--lavender-deep); display:inline-block;
+  }
+  .modal-field{ margin-bottom:14px; }
+  .modal-field-row{ display:flex; gap:10px; }
+  .modal-field-row .modal-field{ flex:1; min-width:0; }
+  .modal-field label{
+    display:block; font-size:11.5px; font-weight:800; color:var(--muted); margin-bottom:5px;
+  }
+  .modal-field input[type=text], .modal-field input[type=url], .modal-field input[type=date],
+  .modal-field textarea, .modal-field select{
+    width:100%;
+    border:1px solid var(--line);
+    background:#F7FCFE;
+    border-radius:10px;
+    padding:9px 10px;
+    font-size:13px;
+    font-family:inherit;
+    box-sizing:border-box;
+    color:var(--ink);
+    transition:border-color 0.15s, box-shadow 0.15s;
+  }
+  .modal-field input:focus, .modal-field select:focus, .modal-field textarea:focus{
+    outline:none;
+    border-color:var(--lavender-deep);
+    box-shadow:0 0 0 3px rgba(95,168,211,0.18);
+    background:#fff;
+  }
+  .modal-field textarea{ resize:vertical; min-height:70px; }
+  .modal-link-preview{ margin-top:6px; font-size:12px; word-break:break-all; }
+  .modal-link-preview a{ color:var(--lavender-deep); font-weight:700; text-decoration:none; }
+  .modal-link-preview a:hover{ text-decoration:underline; }
+  .modal-hint{ font-size:11px; color:var(--muted); margin-top:4px; }
+  .modal-actions{
+    display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:8px;
+  }
+  .modal-actions .left{ display:flex; gap:8px; }
+  .modal-btn{
+    border:none; border-radius:10px; padding:9px 16px; font-size:13px; font-weight:800; cursor:pointer;
+  }
+  .modal-btn.save{ background:var(--mint); color:#3E6B54; }
+  .modal-btn.cancel{ background:#EAF5FA; color:var(--muted); }
+  .modal-btn.delete{ background:#FFEFF2; color:var(--coral); }
+  .modal-close-x{
+    position:absolute; top:16px; right:16px; border:none; background:transparent;
+    font-size:16px; color:var(--muted); cursor:pointer;
+  }
+  .task-history-trigger{ cursor:pointer; }
+  .task-history-trigger:hover{ opacity:0.75; }
+  .midlong-history-trigger{ cursor:pointer; }
+  .midlong-history-trigger:hover{ opacity:0.75; }
+  /* 진행률 (다른 카드와 동일한 스타일, 좌-중-우 미니 레이아웃) */
+  .pm-row{
+    display:grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items:center; gap:8px;
+  }
+  .pm-left{ min-width:0; text-align:center; }
+  .pm-stat{ display:flex; align-items:baseline; gap:5px; justify-content:center; }
+  .pm-num{ font-size:16px; font-weight:800; color:var(--ink); line-height:1.5; }
+  .pm-label{ font-size:10px; font-weight:700; color:var(--muted); }
+  .progress-sub{ font-size:10px; color:var(--muted); margin-top:4px; }
+  .pm-divider{
+    align-self:stretch; width:0; border-left:1px dashed var(--line); margin:0 4px;
+  }
+  .pm-center{ min-width:0; display:flex; align-items:center; justify-content:center; }
+  .pm-right{
+    min-width:0; height:136px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  }
+  .flower-name{
+    font-size:9.5px; font-weight:800; color:var(--peach-deep); margin-bottom:2px;
+  }
+  .donut-wrap-sm{ position:relative; width:84px; height:84px; flex-shrink:0; }
+  .donut-wrap-sm .donut-svg{ width:100%; height:100%; transform:rotate(-90deg); }
+  .donut-wrap-sm .donut-track{ fill:none; stroke:#EAF5FA; stroke-width:9; }
+  .donut-wrap-sm .donut-fill{
+    fill:none; stroke:url(#donutGrad); stroke-width:9; stroke-linecap:round;
+    stroke-dasharray:0 100; transition:stroke-dasharray 0.8s cubic-bezier(.4,1.6,.4,1);
+  }
+  .donut-wrap-sm .donut-pct{
+    position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+    font-size:15px; font-weight:800; color:var(--ink);
+  }
+  .flower-box-sm{
+    width:82px; height:72px; display:flex; align-items:flex-end; justify-content:center;
+  }
+  .flower-box-sm svg{ width:100%; height:100%; overflow:visible; }
+  .flower-badge-sm{
+    background:#E7F7EE; color:#3E6B54; font-size:9px; font-weight:800;
+    padding:4px 9px; border-radius:12px; text-align:center;
+    margin-top:8px; max-width:112px; line-height:1.35;
+    word-break:keep-all; overflow-wrap:break-word;
+  }
+  .flower-pop{ animation: flowerPop 0.65s cubic-bezier(.34,1.56,.64,1); }
+  @keyframes flowerPop{
+    0%{ transform:scale(0.6) translateY(6px); opacity:0.3; }
+    65%{ transform:scale(1.1) translateY(-2px); opacity:1; }
+    100%{ transform:scale(1) translateY(0); opacity:1; }
+  }
+  .sparkle{ animation: sparkleTwinkle 1.7s ease-in-out infinite; transform-origin:center; }
+  .confetti-piece{
+    animation-name: confettiFlutter;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    transform-origin:center;
+  }
+  @keyframes confettiFlutter{
+    0%{ transform:translate(0,0) rotate(0deg); opacity:0.55; }
+    25%{ transform:translate(calc(var(--dx) * -1), var(--dy)) rotate(90deg); opacity:1; }
+    50%{ transform:translate(var(--dx), calc(var(--dy) * 1.6)) rotate(180deg); opacity:0.7; }
+    75%{ transform:translate(calc(var(--dx) * -0.6), var(--dy)) rotate(270deg); opacity:1; }
+    100%{ transform:translate(0,0) rotate(360deg); opacity:0.55; }
+  }
+  @keyframes sparkleTwinkle{
+    0%,100%{ opacity:0.15; transform:scale(0.6); }
+    50%{ opacity:1; transform:scale(1.15); }
+  }
+  .stem-sway{ animation: stemSway 3.2s ease-in-out infinite; transform-origin:50% 100%; }
+  @keyframes stemSway{
+    0%,100%{ transform:rotate(-1.5deg); }
+    50%{ transform:rotate(1.5deg); }
+  }
+  /* 캘린더 도장 */
+  .day-stamp{ position:absolute; top:6px; right:2px; width:35px; height:35px; font-size:35px; line-height:1; z-index:2; display:inline-block; filter:drop-shadow(0 2px 2px rgba(0,0,0,0.15)); }
+  /* 캘린더 */
+  .cal-head{
+    display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;
+  }
+  .cal-head button{
+    border:none; background:#EAF5FA; border-radius:8px; width:26px;height:26px;
+    cursor:pointer; font-weight:800; color:var(--muted);
+  }
+  .cal-head .ym{font-weight:800; font-size:14px;}
+  .cal-head .task-today-btn{ width:auto; height:auto; }
+  .cal-head-center{
+    display:flex; align-items:center; gap:8px; flex:1; justify-content:center;
+  }
+  .cal-grid{
+    display:grid; grid-template-columns:repeat(7,1fr); gap:4px;
+    text-align:left;
+    position:relative;
+  }
+  .cal-grid .dow{ font-size:11px; color:var(--muted); font-weight:700; padding-bottom:4px; text-align:center;}
+  .cal-event-bar{
+    position:absolute;
+    background:var(--mint);
+    color:#3E6B54;
+    font-size:9px;
+    font-weight:700;
+    padding:0 6px;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    pointer-events:none;
+    z-index:1;
+    box-shadow:0 1px 2px rgba(85,90,150,0.12);
+  }
+  .cal-event-bar.bar-start{ border-radius:8px 0 0 8px; }
+  .cal-event-bar.bar-end{ border-radius:0 8px 8px 0; }
+  .cal-event-bar.bar-start.bar-end{ border-radius:8px; }
+  .cal-cell{
+    position:relative;
+    min-height:112px;
+    border-radius:10px;
+    font-size:11px;
+    font-weight:700;
+    padding:5px 4px;
+    color:var(--ink);
+    cursor:pointer;
+    transition:background 0.15s;
+    overflow:hidden;
+  }
+  .cal-cell:hover{ background:#F3F3FB; }
+  .cal-cell .daynum{ text-align:center; display:block; }
+  .cal-cell.other{color:#D8D8E6; cursor:default;}
+  .cal-cell.other:hover{ background:none; }
+  .cal-cell.today{
+    background:var(--lavender);
+    color:#2C2E5C;
+    box-shadow:0 0 0 2px var(--lavender-deep) inset;
+  }
+  .cal-cell.today:hover{ background:var(--lavender); }
+  .cal-cell.selected{
+    box-shadow:0 0 0 2px var(--coral) inset;
+  }
+  .cal-cell.holiday .daynum{ color:var(--coral); }
+  .cal-cell .holiday-label{
+    font-size:9px; font-weight:800; color:var(--coral);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:block; margin-top:1px;
+  }
+  .cal-cell .mini-event{
+    font-size:9px; font-weight:700;
+    background:var(--lavender); color:#1F5C82;
+    border-radius:4px; padding:1px 3px;
+    margin-top:2px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    display:block;
+  }
+  .cal-cell .mini-event.manual{
+    background:var(--mint); color:#3E6B54;
+    cursor:pointer;
+  }
+  .cal-cell .mini-event.manual:hover{ filter:brightness(0.96); }
+  .cal-cell .mini-more{
+    font-size:9px; color:var(--muted); font-weight:700; margin-top:1px; display:block;
+  }
+  .cal-cell .stickers{
+    display:flex; justify-content:center; gap:2px; margin-top:2px;
+  }
+  .cal-cell .stickers span{
+    width:5px;height:5px;border-radius:50%;display:inline-block;
+  }
+  .cal-legend{
+    display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; font-size:11px; color:var(--muted);
+  }
+  .cal-legend span{display:inline-flex; align-items:center; gap:4px;}
+  .cal-legend i{width:7px;height:7px;border-radius:50%;display:inline-block;}
+  /* 날짜 상세 */
+  .day-detail-title{ font-size:13px; font-weight:800; margin-bottom:8px; }
+  .day-detail-holiday{
+    display:inline-block; font-size:11px; font-weight:800; color:var(--coral);
+    background:#FFEFF2; padding:3px 10px; border-radius:999px; margin-bottom:8px;
+  }
+  .day-detail-item{
+    padding:10px; border-radius:12px; background:#F5F6FF; margin-bottom:8px;
+  }
+  .day-detail-item .t{ font-size:13px; font-weight:800; margin-bottom:3px; }
+  .day-detail-item .row{ font-size:11.5px; color:var(--muted); margin-top:2px; }
+  .day-detail-item.manual-event{ cursor:pointer; }
+  .day-detail-item.manual-event:hover{ background:#E4F2FA; }
+  .manual-tag{
+    display:inline-block; font-size:9.5px; font-weight:800; color:var(--lavender-deep);
+    background:#E4F2FA; padding:2px 7px; border-radius:999px; margin-right:4px; vertical-align:middle;
+  }
+  /* 타임라인 */
+  .timeline{ position:relative; padding-left:34px; }
+  .tl-hour{
+    position:relative;
+    height:52px;
+    border-top:1px solid var(--line);
+  }
+  .tl-hour::after{
+    content:'';
+    position:absolute; left:0; right:0; top:50%;
+    border-top:1px dashed var(--line);
+    opacity:0.7;
+  }
+  .tl-hour .label{
+    position:absolute; left:-34px; top:-7px; font-size:10px; color:var(--muted); font-weight:700; width:30px; text-align:right;
+  }
+  .tl-event{
+    position:absolute;
+    left:38px; right:10px;
+    background:var(--lavender);
+    border-left:3px solid var(--lavender-deep);
+    border-radius:8px;
+    font-size:10px;
+    font-weight:700;
+    color:#1F5C82;
+    padding:2px 6px;
+    overflow:hidden;
+  }
+  .tl-event.manual{
+    background:var(--mint);
+    border-left:3px solid var(--mint-deep);
+    color:#3E6B54;
+  }
+  .tl-event-title{
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .tl-event-sub{
+    font-size:9px; font-weight:600; opacity:0.85;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+    margin-top:1px;
+  }
+  .tl-now{
+    position:absolute; left:0; right:0; height:2px; background:var(--coral); z-index:3;
+  }
+  .tl-now::before{
+    content:''; position:absolute; left:-4px; top:-3px; width:8px;height:8px;border-radius:50%;background:var(--coral);
+  }
+  /* 우측 카드들 */
+  .weather-box{ display:flex; align-items:center; gap:12px; }
+  .weather-box .emoji{ font-size:38px; }
+  .weather-box .temp{ font-size:22px; font-weight:800; }
+  .weather-box .desc{ font-size:12px; color:var(--muted); }
+  .fortune-block{ margin-bottom:10px; }
+  .fortune-block .label{ font-size:11px; font-weight:800; color:var(--peach-deep); margin-bottom:4px; }
+  .fortune-block .body{ font-size:13px; line-height:1.5; }
+  .fortune-extra{ font-size:11px; color:var(--muted); margin-top:6px; }
+  .fortune-date-jump{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:6px 8px;
+    font-size:11.5px; font-family:inherit; margin-top:8px; color:var(--muted);
+  }
+  .fortune-other-toggle{
+    font-size:11px; color:var(--lavender-deep); font-weight:700; margin-top:8px; cursor:pointer;
+  }
+  .fortune-other-toggle:hover{ text-decoration:underline; }
+  .fortune-other-fields{
+    display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;
+  }
+  .fortune-other-fields select{
+    border:1px solid var(--line); border-radius:10px; padding:6px 8px;
+    font-size:11.5px; font-family:inherit; background:#fff; color:var(--ink); flex:0 0 auto;
+  }
+  .fortune-other-fields input[type=date]{
+    flex:1; min-width:110px; border:1px solid var(--line); border-radius:10px; padding:6px 8px;
+    font-size:11.5px; font-family:inherit; color:var(--muted);
+  }
+  .fortune-other-fields button{
+    border:none; border-radius:10px; padding:6px 10px; font-size:11px; font-weight:800; cursor:pointer;
+    flex:0 0 auto;
+  }
+  #fortuneApplyBtn{ background:var(--lavender); color:#1F5C82; }
+  #fortuneResetBtn{ background:#EAF5FA; color:var(--muted); }
+  .eng-block .label{ font-size:11px; font-weight:800; color:var(--lavender-deep); margin-bottom:4px; }
+  .eng-block .en{ font-size:14px; font-weight:700; margin-bottom:2px; }
+  .eng-block .kr{ font-size:12px; color:var(--muted); }
+  .midlong-item{
+    padding:8px 0; border-bottom:1px dashed var(--line); font-size:12.5px;
+  }
+  .midlong-item:last-child{border-bottom:none;}
+  .midlong-item.done .midlong-title{ color:var(--muted); text-decoration:line-through; }
+  .midlong-row{ display:flex; align-items:center; gap:8px; cursor:default; }
+  .midlong-row input[type=checkbox]{ width:16px; height:16px; accent-color:var(--peach-deep); cursor:pointer; flex-shrink:0; }
+  .midlong-main{ flex:1; min-width:0; cursor:pointer; }
+  .midlong-title{ font-weight:700; }
+  .midlong-dates{ font-size:10.5px; color:var(--muted); margin-top:1px; }
+  .midlong-progress-wrap{ display:flex; align-items:center; gap:6px; margin:4px 0 0 26px; }
+  .midlong-progress-bar{
+    flex:1; height:6px; border-radius:999px; background:#EAF5FA; overflow:hidden;
+  }
+  .midlong-progress-fill{
+    height:100%; border-radius:999px;
+    background:linear-gradient(90deg, var(--mint-deep), var(--mint));
+    transition:width 0.4s ease;
+  }
+  .midlong-progress-fill.overdue{ background:linear-gradient(90deg, var(--coral), #FFC2CE); }
+  .midlong-progress-label{ font-size:10px; font-weight:800; color:var(--mint-deep); white-space:nowrap; flex-shrink:0; }
+  .midlong-progress-label.overdue{ color:var(--coral); }
+  .midlong-progress-label.done-label{ color:var(--mint-deep); margin:4px 0 0 26px; }
+  .midlong-toggle{
+    border:none; background:#FFF3E5; color:var(--peach-deep); font-size:10.5px; font-weight:800;
+    border-radius:999px; padding:3px 8px; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  }
+  .midlong-subtasks{ margin:6px 0 2px 30px; }
+  .midlong-subtask{
+    font-size:11.5px; color:var(--ink); display:flex; align-items:center; gap:6px; padding:3px 0;
+  }
+  .midlong-subtask.done{ color:var(--muted); text-decoration:line-through; }
+  .midlong-subtask .sub-dot{ width:5px; height:5px; border-radius:50%; background:var(--lavender-deep); flex-shrink:0; }
+  .midlong-add{ margin-top:10px; display:flex; flex-direction:column; gap:6px; }
+  .midlong-add-row1{ display:flex; gap:6px; }
+  .midlong-add-row1 input{
+    flex:1; min-width:0; border:1px solid var(--line); border-radius:10px; padding:8px 10px;
+    font-size:13px; font-family:inherit;
+  }
+  .midlong-add-row1 button{
+    flex:0 0 auto; border:none; background:var(--peach); color:#7A4A0F; font-weight:800;
+    border-radius:10px; padding:8px 14px; font-size:13px; cursor:pointer; white-space:nowrap;
+  }
+  .midlong-add-row1 button:hover{ filter:brightness(0.97); }
+  .midlong-add-row2{ display:flex; align-items:center; gap:5px; }
+  .midlong-add-row2 select{
+    flex:0 0 68px; width:68px; border:1px solid var(--line); border-radius:10px; padding:7px 2px;
+    font-size:11px; font-family:inherit; background:#fff; color:var(--ink);
+  }
+  .midlong-add-row2 input[type=date]{
+    flex:1; min-width:0; border:1px solid var(--line); border-radius:10px; padding:7px 3px;
+    font-size:10.5px; font-family:inherit; color:var(--muted);
+  }
+  .midlong-add-row2 .tilde{ color:var(--muted); font-size:12px; flex:0 0 auto; }
+  .team-item{
+    padding:7px 0; border-bottom:1px dashed var(--line); font-size:12.5px; display:flex; gap:8px;
+  }
+  .team-item:last-child{border-bottom:none;}
+  .team-item .d{ color:var(--muted); font-weight:700; min-width:44px; font-size:11px;}
+  .team-week-nav{
+    display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:8px;
+  }
+  .team-week-nav button{
+    border:none; background:#EAF5FA; border-radius:8px; width:24px; height:24px;
+    cursor:pointer; font-weight:800; color:var(--muted);
+  }
+  .team-week-label{ font-size:12.5px; font-weight:800; }
+  .task-day-nav{
+    display:flex; align-items:center; justify-content:center; gap:10px; margin-bottom:6px;
+  }
+  .task-day-nav button{
+    border:none; background:#EAF5FA; border-radius:8px; width:24px; height:24px;
+    cursor:pointer; font-weight:800; color:var(--muted);
+  }
+  .task-day-label{ font-size:12.5px; font-weight:800; }
+  .task-today-btn{
+    border:none; background:var(--lavender); color:#1F5C82; font-size:11px; font-weight:800;
+    border-radius:999px; padding:4px 10px; cursor:pointer; white-space:nowrap; flex-shrink:0;
+  }
+  .task-today-btn:hover{ filter:brightness(0.97); }
+  .task-card-header{
+    display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:12px;
+  }
+  .task-card-header h2{ margin:0; }
+  .task-date-jump{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:6px 8px;
+    font-size:12px; font-family:inherit; margin-top:10px; color:var(--muted);
+  }
+  .team-date-jump{
+    width:100%; border:1px solid var(--line); border-radius:10px; padding:6px 8px;
+    font-size:12px; font-family:inherit; margin-bottom:10px; color:var(--muted);
+  }
+  .team-day-group{ margin-bottom:6px; }
+  .team-day-group .day-label{
+    font-size:11px; font-weight:800; color:var(--lavender-deep); margin:6px 0 2px;
+  }
+  .team-item.self .d{ color:var(--mint-deep); }
+  small.hint{ display:block; color:var(--muted); font-size:11px; margin-top:8px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="title-row">
+    <h1>🐰 Girang's daily planner</h1>
+    <div class="date" id="todayLabel"></div>
+  </div>
+  <div class="sync-status" id="syncStatus">동기화 대기중</div>
+</div>
+
+<div class="board">
+
+  <!-- 좌측 -->
+  <div class="col">
+    <div class="card">
+      <h2><span class="dot" style="background:var(--mint-deep)"></span>오늘의 업무 진행률</h2>
+      <div class="pm-row">
+        <div class="pm-left">
+          <div class="pm-stat"><span class="pm-num" id="pbCompletedNum">0</span><span class="pm-label">Completed</span></div>
+          <div class="pm-stat"><span class="pm-num" id="pbTotalNum">0</span><span class="pm-label">Total</span></div>
+          <div class="progress-sub" id="progressSub">완료 0 / 전체 0</div>
+        </div>
+        <div class="pm-divider"></div>
+        <div class="pm-center">
+          <div class="donut-wrap-sm">
+            <svg class="donut-svg" viewBox="0 0 42 42">
+              <defs>
+                <linearGradient id="donutGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="var(--mint)"/>
+                  <stop offset="100%" stop-color="var(--mint-deep)"/>
+                </linearGradient>
+              </defs>
+              <circle class="donut-track" cx="21" cy="21" r="15.9"/>
+              <circle class="donut-fill" id="donutFill" cx="21" cy="21" r="15.9"/>
+            </svg>
+            <div class="donut-pct" id="progressPct">0%</div>
+          </div>
+        </div>
+        <div class="pm-divider"></div>
+        <div class="pm-right">
+          <div class="flower-name" id="flowerName"></div>
+          <div class="flower-box-sm" id="flowerBox"></div>
+          <div class="flower-badge-sm" id="flowerMsg"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="task-card-header">
+        <h2 class="task-history-trigger" title="클릭하면 전체 업무 이력을 볼 수 있어요"><span class="dot" style="background:var(--mint-deep)"></span>오늘의 업무 <span style="font-size:10px; color:var(--muted); font-weight:700;">(전체보기 ›)</span></h2>
+        <button id="taskTodayBtn" class="task-today-btn">오늘</button>
+      </div>
+      <div class="task-day-nav">
+        <button id="taskPrevDay">‹</button>
+        <span class="task-day-label" id="taskDayLabel"></span>
+        <button id="taskNextDay">›</button>
+      </div>
+      <div id="taskListLeft"></div>
+      <div class="task-add">
+        <input type="text" id="newTaskInput" placeholder="업무를 입력하고 Enter">
+        <select id="newTaskPriority" title="중요도">
+          <option value="high">🔴 높음</option>
+          <option value="medium" selected>🟣 보통</option>
+          <option value="low">🟢 낮음</option>
+        </select>
+        <input type="date" id="newTaskDueDate" title="완료목표일 (선택)">
+        <button id="addTaskBtn">추가</button>
+      </div>
+      <input type="date" id="taskDateJump" class="task-date-jump" title="날짜로 이동해서 검색">
+    </div>
+    <div class="card">
+      <h2 class="midlong-history-trigger" title="클릭하면 전체 프로젝트 이력을 볼 수 있어요"><span class="dot" style="background:var(--peach-deep)"></span>중장기 과제 일정 <span style="font-size:10px; color:var(--muted); font-weight:700;">(전체보기 ›)</span></h2>
+      <div id="midLongList"></div>
+      <div class="midlong-add">
+        <div class="midlong-add-row1">
+          <input type="text" id="newMidLongInput" placeholder="중장기 과제를 입력하세요">
+          <button id="addMidLongBtn">추가</button>
+        </div>
+        <div class="midlong-add-row2">
+          <select id="newMidLongPriority" title="중요도">
+            <option value="high">🔴 높음</option>
+            <option value="medium" selected>🟣 보통</option>
+            <option value="low">🟢 낮음</option>
+          </select>
+          <input type="date" id="newMidLongStart" title="시작일 (필수)">
+          <span class="tilde">~</span>
+          <input type="date" id="newMidLongDue" title="완료목표일 (필수)">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 가운데 -->
+  <div class="col">
+    <div class="card">
+      <div class="cal-head">
+        <button id="prevMonth">‹</button>
+        <div class="cal-head-center">
+          <span class="ym" id="calYm"></span>
+          <button id="thisMonthBtn" class="task-today-btn">이번달</button>
+        </div>
+        <button id="nextMonth">›</button>
+      </div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend">
+        <span><i style="background:var(--holiday)"></i>공휴일</span>
+        <span><i style="background:var(--peach-deep)"></i>연차</span>
+        <span><i style="background:var(--lavender-deep)"></i>회의</span>
+        <span><i style="background:var(--mint-deep)"></i>내 일정</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="dot" style="background:var(--lavender-deep)"></span>오늘의 회의 일정</h2>
+      <div id="meetingList"></div>
+    </div>
+    <div class="card" id="dayDetailCard">
+      <h2><span class="dot" style="background:var(--coral)"></span><span id="dayDetailTitle">날짜를 선택해보세요</span></h2>
+      <div id="dayDetailBody"></div>
+    </div>
+  </div>
+
+  <!-- 우측 1 -->
+  <div class="col">
+    <div class="card">
+      <h2><span class="dot" style="background:var(--sky-deep)"></span>오늘의 타임라인</h2>
+      <div class="timeline" id="timeline"></div>
+    </div>
+  </div>
+
+  <!-- 우측 2 -->
+  <div class="col">
+    <div class="card">
+      <h2><span class="dot" style="background:var(--sky-deep)"></span>오늘의 날씨</h2>
+      <div class="weather-box" id="weatherBox"></div>
+      <small class="hint" id="weatherHint">위치 확인 중...</small>
+    </div>
+    <div class="card">
+      <div class="fortune-block">
+        <div class="label">🔮 <span id="fortuneWhoLabel">오늘의 운세</span></div>
+        <div class="body" id="fortuneText"></div>
+        <div class="fortune-extra" id="fortuneExtra"></div>
+        <input type="date" id="fortuneDateJump" class="fortune-date-jump" title="다른 날짜의 운세 확인">
+        <div class="fortune-other-toggle" id="fortuneOtherToggle">👤 다른 사람 운세도 보기</div>
+        <div class="fortune-other-fields" id="fortuneOtherFields" style="display:none;">
+          <select id="fortuneGenderInput">
+            <option value="female">여자</option>
+            <option value="male">남자</option>
+          </select>
+          <input type="text" id="fortuneBirthInput" title="생일 (예: 1991-05-15)" placeholder="YYYY-MM-DD">
+          <button id="fortuneApplyBtn">확인</button>
+          <button id="fortuneResetBtn">내 운세로</button>
+        </div>
+      </div>
+      <div class="eng-block">
+        <div class="label">💬 오늘의 영어 한마디</div>
+        <div class="en" id="engSentence"></div>
+        <div class="kr" id="engMeaning"></div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="task-card-header">
+        <h2><span class="dot" style="background:var(--lavender-deep)"></span>팀 일정</h2>
+        <button id="teamThisWeekBtn" class="task-today-btn">이번주</button>
+      </div>
+      <div class="team-week-nav">
+        <button id="teamPrevWeek">‹</button>
+        <span id="teamWeekLabel" class="team-week-label"></span>
+        <button id="teamNextWeek">›</button>
+      </div>
+      <input type="date" id="teamDateJump" class="team-date-jump">
+      <div id="teamList"></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 업무 상세 모달 -->
+<div class="modal-overlay" id="taskModalOverlay">
+  <div class="modal-panel" style="position:relative;">
+    <button class="modal-close-x" id="taskModalClose" aria-label="닫기">✕</button>
+    <h3>업무 상세</h3>
+
+    <div class="modal-field">
+      <label>업무 제목</label>
+      <input type="text" id="taskModalTitleInput">
+    </div>
+
+    <div class="modal-field">
+      <label>중장기 과제 연결 (선택)</label>
+      <select id="taskModalMidLong"></select>
+    </div>
+
+    <div class="modal-field-row">
+      <div class="modal-field">
+        <label>중요도</label>
+        <select id="taskModalPriority">
+          <option value="high">🔴 높음</option>
+          <option value="medium">🟣 보통</option>
+          <option value="low">🟢 낮음</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>완료목표일 (선택)</label>
+        <input type="date" id="taskModalDueDate">
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label>메모</label>
+      <textarea id="taskModalMemo" placeholder="업무 관련 메모를 남겨보세요"></textarea>
+    </div>
+
+    <div class="modal-field">
+      <label>관련 링크 (컨플루언스, 문서함, 첨부파일 링크 등)</label>
+      <input type="url" id="taskModalLink" placeholder="https://...">
+      <div class="modal-link-preview" id="taskModalLinkPreview"></div>
+      <div class="modal-hint">※ 실제 파일 업로드는 지원하지 않아요. 파일이 있는 곳의 링크를 붙여넣으면 여기서 바로 열 수 있어요.</div>
+    </div>
+
+    <div class="modal-actions">
+      <div class="left">
+        <button class="modal-btn cancel" id="taskModalCancel">취소</button>
+        <button class="modal-btn delete" id="taskModalDelete">삭제</button>
+      </div>
+      <button class="modal-btn save" id="taskModalSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 중장기 과제 상세 모달 -->
+<div class="modal-overlay" id="midLongModalOverlay">
+  <div class="modal-panel" style="position:relative;">
+    <button class="modal-close-x" id="midLongModalClose" aria-label="닫기">✕</button>
+    <h3>중장기 과제 상세</h3>
+
+    <div class="modal-field">
+      <label>과제 제목</label>
+      <input type="text" id="midLongModalTitleInput">
+    </div>
+
+    <div class="modal-field-row">
+      <div class="modal-field">
+        <label>중요도</label>
+        <select id="midLongModalPriority">
+          <option value="high">🔴 높음</option>
+          <option value="medium">🟣 보통</option>
+          <option value="low">🟢 낮음</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-field-row">
+      <div class="modal-field">
+        <label>시작일</label>
+        <input type="date" id="midLongModalStart">
+      </div>
+      <div class="modal-field">
+        <label>완료목표일</label>
+        <input type="date" id="midLongModalDue">
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label>메모</label>
+      <textarea id="midLongModalMemo" placeholder="과제 관련 메모를 남겨보세요"></textarea>
+    </div>
+
+    <div class="modal-field">
+      <label>관련 링크 (컨플루언스, 문서함 등)</label>
+      <input type="url" id="midLongModalLink" placeholder="https://...">
+      <div class="modal-link-preview" id="midLongModalLinkPreview"></div>
+    </div>
+
+    <div class="modal-actions">
+      <div class="left">
+        <button class="modal-btn cancel" id="midLongModalCancel">취소</button>
+        <button class="modal-btn delete" id="midLongModalDelete">삭제</button>
+      </div>
+      <button class="modal-btn save" id="midLongModalSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- 일정 추가/수정 모달 -->
+<div class="modal-overlay" id="eventModalOverlay">
+  <div class="modal-panel" style="position:relative;">
+    <button class="modal-close-x" id="eventModalClose" aria-label="닫기">✕</button>
+    <h3 id="eventModalHeading">일정 추가</h3>
+
+    <div class="modal-field">
+      <label>일정 제목</label>
+      <input type="text" id="eventModalTitleInput" placeholder="예: 팀 회의">
+    </div>
+
+    <div class="modal-field-row">
+      <div class="modal-field">
+        <label>시작일</label>
+        <input type="date" id="eventModalStartDate">
+      </div>
+      <div class="modal-field">
+        <label>종료일 (선택, 비우면 당일만)</label>
+        <input type="date" id="eventModalEndDate">
+      </div>
+    </div>
+
+    <div class="modal-field-row">
+      <div class="modal-field">
+        <label>시작 시간</label>
+        <select id="eventModalStartTime"></select>
+      </div>
+      <div class="modal-field">
+        <label>종료 시간</label>
+        <select id="eventModalEndTime"></select>
+      </div>
+    </div>
+
+    <div class="modal-field">
+      <label>메모</label>
+      <textarea id="eventModalMemo" placeholder="간단한 메모를 남겨보세요"></textarea>
+    </div>
+
+    <div class="modal-actions">
+      <div class="left">
+        <button class="modal-btn cancel" id="eventModalCancel">취소</button>
+        <button class="modal-btn delete" id="eventModalDelete" style="display:none;">삭제</button>
+      </div>
+      <button class="modal-btn save" id="eventModalSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="planner.js"></script>
+</body>
+</html>
