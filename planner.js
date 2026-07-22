@@ -1864,6 +1864,27 @@ setInterval(pullFromCloud, 30 * 1000);
 // 페이지가 열리자마자 한 번 확인
 pullFromCloud();
 
+/* ===================================================================
+   반응형 레이아웃 보정
+   화면이 좁아져 2컬럼으로 바뀌면, 캘린더가 있는 컬럼이 좌측 컬럼보다
+   길어서 좌측 아래에 빈 공간이 생겨요. 이때는 "오늘의 타임라인" 카드를
+   좌측 컬럼 맨 아래로 옮겨서 빈 공간 없이 자연스럽게 이어지도록 합니다.
+=================================================================== */
+function adjustResponsiveLayout(){
+  const isNarrow = window.matchMedia('(max-width: 1100px)').matches;
+  const timelineCard = document.getElementById('timelineCard');
+  const colLeft = document.getElementById('colLeft');
+  const colTimeline = document.getElementById('colTimeline');
+  if(!timelineCard || !colLeft || !colTimeline) return;
+  if(isNarrow){
+    if(timelineCard.parentElement !== colLeft) colLeft.appendChild(timelineCard);
+  } else {
+    if(timelineCard.parentElement !== colTimeline) colTimeline.appendChild(timelineCard);
+  }
+}
+window.addEventListener('resize', adjustResponsiveLayout);
+adjustResponsiveLayout();
+
 init();
 
 // 페이지를 오래 켜두는 동안에도, 5분마다 '시간이 지난 회의' 자동 체크 및 영어 한마디 교체 시점을 다시 확인합니다.
