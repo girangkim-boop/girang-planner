@@ -87,7 +87,26 @@
     align-items:start;
   }
   @media (max-width: 1100px){
-    .board{grid-template-columns: minmax(0,1fr);}
+    .board{
+      display:grid;
+      grid-template-columns: minmax(0,1fr) minmax(0,1fr);
+      grid-template-areas:
+        "progress progress"
+        "tasks midlong"
+        "calendar calendar"
+        "meetings daydetail"
+        "timeline sidepanel";
+      gap:18px;
+    }
+    #colLeft, #colCenter{ display:contents; }
+    #progressCard{ grid-area: progress; }
+    #taskCard{ grid-area: tasks; }
+    #midLongCard{ grid-area: midlong; }
+    #calendarCard{ grid-area: calendar; }
+    #meetingCard{ grid-area: meetings; }
+    #dayDetailCard{ grid-area: daydetail; }
+    #colTimeline{ grid-area: timeline; }
+    #colRight2{ grid-area: sidepanel; }
   }
   .col{display:flex; flex-direction:column; gap:18px; min-width:0;}
   .card{
@@ -679,7 +698,7 @@
 
   <!-- 좌측 -->
   <div class="col" id="colLeft">
-    <div class="card">
+    <div class="card" id="progressCard">
       <h2><span class="dot" style="background:var(--mint-deep)"></span>오늘의 업무 진행률</h2>
       <div class="pm-row">
         <div class="pm-left">
@@ -711,7 +730,7 @@
         </div>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="taskCard">
       <div class="task-card-header">
         <h2 class="task-history-trigger" title="클릭하면 전체 업무 이력을 볼 수 있어요"><span class="dot" style="background:var(--mint-deep)"></span>오늘의 업무 <span style="font-size:10px; color:var(--muted); font-weight:700;">(전체보기 ›)</span></h2>
         <button id="taskTodayBtn" class="task-today-btn">오늘</button>
@@ -734,7 +753,7 @@
       </div>
       <input type="date" id="taskDateJump" class="task-date-jump" title="날짜로 이동해서 검색">
     </div>
-    <div class="card">
+    <div class="card" id="midLongCard">
       <h2 class="midlong-history-trigger" title="클릭하면 전체 프로젝트 이력을 볼 수 있어요"><span class="dot" style="background:var(--peach-deep)"></span>중장기 과제 일정 <span style="font-size:10px; color:var(--muted); font-weight:700;">(전체보기 ›)</span></h2>
       <div id="midLongList"></div>
       <div class="midlong-add">
@@ -757,8 +776,8 @@
   </div>
 
   <!-- 가운데 -->
-  <div class="col">
-    <div class="card">
+  <div class="col" id="colCenter">
+    <div class="card" id="calendarCard">
       <div class="cal-head">
         <button id="prevMonth">‹</button>
         <div class="cal-head-center">
@@ -775,7 +794,7 @@
         <span><i style="background:var(--mint-deep)"></i>내 일정</span>
       </div>
     </div>
-    <div class="card">
+    <div class="card" id="meetingCard">
       <h2><span class="dot" style="background:var(--lavender-deep)"></span>오늘의 회의 일정</h2>
       <div id="meetingList"></div>
     </div>
@@ -794,7 +813,7 @@
   </div>
 
   <!-- 우측 2 -->
-  <div class="col">
+  <div class="col" id="colRight2">
     <div class="card">
       <h2><span class="dot" style="background:var(--sky-deep)"></span>오늘의 날씨</h2>
       <div class="weather-box" id="weatherBox"></div>

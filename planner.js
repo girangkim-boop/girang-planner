@@ -330,23 +330,26 @@ async function init(){
   recomputeMeetings();
   const midlongNorm = normalizeMidLong(midlong);
   STATE.midlong = midlongNorm.list;
-  // 저장소에 값 자체가 없어서 기본값을 쓴 경우에도, 실제로 저장소에 남겨둡니다.
-  // (그래야 history.html 같은 다른 페이지에서도 같은 데이터를 볼 수 있어요)
-  if(midlongNorm.changed || !rawMidlong) await storageSet('midLongTasks', STATE.midlong);
+  // ⚠️ 저장소에 값이 원래 없어서 예시(더미) 데이터를 보여주는 경우엔, 그걸 진짜 데이터인 것처럼
+  // 저장소/클라우드에 남기지 않습니다. (다른 기기와 동기화될 때 예시 데이터가 섞이면 안 되니까요)
+  if(midlongNorm.changed && rawMidlong) await storageSet('midLongTasks', STATE.midlong);
   const normalized = normalizeTasks(tasks);
   STATE.tasks = normalized.tasks;
 
-  // 이전 버전 버그로, 예시(더미) 회의에서 잘못 자동 생성된 업무가 저장되어 있을 수 있어요.
-  // 제목이 예시 회의 제목과 똑같으면서 회의 연동으로 생성된 표시가 있는 업무는 정리합니다.
+  // 이전 버전 버그로, 예시(더미) 데이터가 실수로 저장되어 있을 수 있어요. 정리합니다.
   const DEMO_MEETING_TITLES = new Set(DEFAULT_MEETINGS.map(m => m.title));
+  const DEMO_TASK_TITLES = new Set(DEFAULT_TASKS.map(t => t.text));
   const beforeCleanCount = STATE.tasks.length;
-  STATE.tasks = STATE.tasks.filter(t => !(t.fromMeetingKey && DEMO_MEETING_TITLES.has(t.text)));
+  STATE.tasks = STATE.tasks.filter(t =>
+    !(t.fromMeetingKey && DEMO_MEETING_TITLES.has(t.text)) && // 예시 회의에서 생성된 업무
+    !(rawTasks && DEMO_TASK_TITLES.has(t.text) && !t.fromMeetingKey && !t.fromEventId) // 예시 업무 자체가 실제 저장소에 섞여 들어간 경우
+  );
   const demoCleaned = STATE.tasks.length !== beforeCleanCount;
 
   // ⚠️ 실제로 동기화된 회의가 있을 때만 업무를 자동 생성합니다.
   // (예시/더미 회의 데이터가 진짜 업무처럼 저장되거나 클라우드에 올라가면 안 되니까요)
   const meetingTasksChanged = hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
-  if(normalized.changed || !rawTasks || meetingTasksChanged || demoCleaned) await storageSet('personalTasks', STATE.tasks);
+  if((normalized.changed && rawTasks) || meetingTasksChanged || demoCleaned) await storageSet('personalTasks', STATE.tasks);
   STATE.leave = toLeaveMap((flexSynced && Array.isArray(flexSynced.leave)) ? flexSynced.leave : leaveFallback);
   STATE.team = (flexSynced && Array.isArray(flexSynced.team) && flexSynced.team.length) ? flexSynced.team : teamFallback;
 
