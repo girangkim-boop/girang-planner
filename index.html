@@ -182,6 +182,10 @@
     font-size:10.5px; color:var(--lavender-deep); font-weight:700; margin-left:5px;
   }
   .due-tag.overdue{ color:var(--coral); }
+  .period-tag{
+    font-size:10.5px; color:var(--mint-deep); font-weight:700; margin-left:5px;
+  }
+  .period-tag.overdue{ color:var(--coral); }
   .midlong-tag{
     display:inline-block; font-size:10px; font-weight:800; color:var(--peach-deep);
     background:#FFF3E5; padding:2px 7px; border-radius:999px; margin-bottom:3px;
@@ -748,7 +752,7 @@
           <option value="medium" selected>🟣 보통</option>
           <option value="low">🟢 낮음</option>
         </select>
-        <input type="date" id="newTaskDueDate" title="완료목표일 (선택)">
+        <input type="date" id="newTaskDueDate" title="완료목표일 (선택, 설정하면 등록일~목표일까지 계속 표시돼요)">
         <button id="addTaskBtn">추가</button>
       </div>
       <input type="date" id="taskDateJump" class="task-date-jump" title="날짜로 이동해서 검색">
@@ -885,7 +889,7 @@
         </select>
       </div>
       <div class="modal-field">
-        <label>완료목표일 (선택)</label>
+        <label>완료목표일 (선택, 설정하면 등록일~목표일까지 계속 표시돼요)</label>
         <input type="date" id="taskModalDueDate">
       </div>
     </div>

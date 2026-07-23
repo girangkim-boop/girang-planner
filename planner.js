@@ -120,11 +120,22 @@ function normalizeMidLong(list){
   });
   return { list: result, changed };
 }
-// 오늘 화면에 보여줄 업무: 오늘 날짜의 업무 + 어제 이전 날짜인데 아직 완료 안 된 업무(이월)
+// 업무에 완료목표일(dueDate)이 등록일보다 뒤로 설정되어 있으면, 등록일~목표일
+// 사이의 모든 날짜에서 "그날의 업무"로 취급합니다(기간 업무). 없거나 등록일과
+// 같으면 기존처럼 date와 정확히 일치하는 날짜에서만 표시됩니다.
+function isTaskOnDate(t, dateStr){
+  if(t.dueDate && t.dueDate >= t.date){
+    return dateStr >= t.date && dateStr <= t.dueDate;
+  }
+  return t.date === dateStr;
+}
+
+// 오늘 화면에 보여줄 업무: 오늘 날짜(또는 기간에 포함된) 업무 + 어제 이전 날짜인데
+// 아직 완료 안 된 업무(이월)
 // 진행률(도넛+꽃)은 조회 중인 날짜와 무관하게 항상 '실제 오늘' 기준으로 계산합니다.
 function getTodayTasksForProgress(){
   const today = todayStr();
-  return STATE.tasks.filter(t => t.date === today || (!t.done && t.date < today));
+  return STATE.tasks.filter(t => isTaskOnDate(t, today) || (!t.done && t.date < today));
 }
 
 function getVisibleTasks(){
@@ -133,12 +144,12 @@ function getVisibleTasks(){
   const PRIORITY_ORDER = { high:0, medium:1, low:2 };
   let list;
   if(viewDate === today){
-    // 오늘: 오늘 날짜 업무 + 어제 이전인데 아직 완료 안 된 업무(이월)
+    // 오늘: 오늘 날짜(또는 기간에 포함된) 업무 + 어제 이전인데 아직 완료 안 된 업무(이월)
     // 단, 스마트오피스 회의에서 자동 생성된 업무는 이월하지 않습니다.
-    list = STATE.tasks.filter(t => t.date === today || (!t.done && t.date < today && !t.fromMeetingKey));
+    list = STATE.tasks.filter(t => isTaskOnDate(t, today) || (!t.done && t.date < today && !t.fromMeetingKey));
   } else {
-    // 다른 날짜를 조회 중이면, 그 날짜의 업무만 정확히 보여줍니다.
-    list = STATE.tasks.filter(t => t.date === viewDate);
+    // 다른 날짜를 조회 중이면, 그 날짜에 해당하는(기간 포함) 업무만 보여줍니다.
+    list = STATE.tasks.filter(t => isTaskOnDate(t, viewDate));
   }
   return list
     .slice()
@@ -408,12 +419,16 @@ function renderTasks(){
   const visible = getVisibleTasks();
   const html = visible.map(t => {
     const midLong = t.midLongId ? STATE.midlong.find(m=>m.id===t.midLongId) : null;
+    const hasPeriod = t.dueDate && t.dueDate > t.date;
+    const inPeriod = hasPeriod && viewDate >= t.date && viewDate <= t.dueDate;
+    const isCarryOver = isViewingToday && t.date < today && !inPeriod;
+    const isOverdue = !t.done && t.dueDate && t.dueDate < today;
     return `
     <div class="task-item ${t.done ? 'done' : ''}" data-id="${t.id}">
       <input type="checkbox" data-id="${t.id}">
       <span class="priority-dot" style="background:${PRIORITY_COLOR[t.priority] || PRIORITY_COLOR.medium}" title="중요도: ${PRIORITY_LABEL[t.priority] || '보통'}"></span>
       <label data-id="${t.id}">
-        ${midLong ? `<span class="midlong-tag">📌 ${escapeHtml(midLong.title)}</span><br>` : ''}${escapeHtml(t.text)}${(isViewingToday && t.date < today) ? `<span class="carry-tag">(${formatMD(t.date)} 이월)</span>` : ''}${t.memo || t.link ? '<span class="memo-mark" title="메모 있음">📝</span>' : ''}${t.dueDate ? `<span class="due-tag ${(!t.done && t.dueDate < today) ? 'overdue' : ''}">🎯${formatMD(t.dueDate)}</span>` : ''}
+        ${midLong ? `<span class="midlong-tag">📌 ${escapeHtml(midLong.title)}</span><br>` : ''}${escapeHtml(t.text)}${isCarryOver ? `<span class="carry-tag">(${formatMD(t.date)} 이월)</span>` : ''}${t.memo || t.link ? '<span class="memo-mark" title="메모 있음">📝</span>' : ''}${hasPeriod ? `<span class="period-tag ${isOverdue ? 'overdue' : ''}" title="완료목표일까지 계속 표시">📅${formatMD(t.date)}~${formatMD(t.dueDate)}</span>` : (t.dueDate ? `<span class="due-tag ${isOverdue ? 'overdue' : ''}">🎯${formatMD(t.dueDate)}</span>` : '')}
       </label>
       <button class="task-delete-btn" data-id="${t.id}" title="삭제" aria-label="삭제">✕</button>
     </div>
