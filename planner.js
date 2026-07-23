@@ -360,7 +360,8 @@ async function init(){
   // ⚠️ 실제로 동기화된 회의가 있을 때만 업무를 자동 생성합니다.
   // (예시/더미 회의 데이터가 진짜 업무처럼 저장되거나 클라우드에 올라가면 안 되니까요)
   const meetingTasksChanged = hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
-  if((normalized.changed && rawTasks) || meetingTasksChanged || demoCleaned) await storageSet('personalTasks', STATE.tasks);
+  const eventTasksChanged = syncPersonalEventTaskCompletion();
+  if((normalized.changed && rawTasks) || meetingTasksChanged || eventTasksChanged || demoCleaned) await storageSet('personalTasks', STATE.tasks);
   STATE.leave = toLeaveMap((flexSynced && Array.isArray(flexSynced.leave)) ? flexSynced.leave : leaveFallback);
   STATE.team = (flexSynced && Array.isArray(flexSynced.team) && flexSynced.team.length) ? flexSynced.team : teamFallback;
 
@@ -1171,6 +1172,28 @@ function syncTasksForEvent(ev){
   }
 }
 
+// 내 일정(직접 추가한 일정)에서 자동 생성된 '오늘의 업무'도, 그 일정에 시간이
+// 지정되어 있고 종료 시간이 지나면 자동으로 완료 체크합니다.
+function syncPersonalEventTaskCompletion(){
+  const todayS = todayStr();
+  const nowMin = new Date().getHours()*60 + new Date().getMinutes();
+  let changed = false;
+  STATE.tasks.forEach(t=>{
+    if(!t.fromEventId || t.done) return;
+    const ev = STATE.personalEvents.find(e => String(e.id) === String(t.fromEventId));
+    if(!ev || !ev.endTime) return; // 시간이 지정 안 된 일정(하루종일)은 자동 완료하지 않음
+    const endMin = timeToMinutes(ev.endTime);
+    const isPast = t.date < todayS || (t.date === todayS && endMin !== null && nowMin >= endMin);
+    if(isPast){
+      t.done = true;
+      t.completedAt = t.date;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
+
 async function saveEventModal(){
   const title = document.getElementById('eventModalTitleInput').value.trim();
   const startDate = document.getElementById('eventModalStartDate').value;
@@ -1192,6 +1215,7 @@ async function saveEventModal(){
   else STATE.personalEvents.push(ev);
 
   syncTasksForEvent(ev);
+  syncPersonalEventTaskCompletion();
   recomputeMeetings();
 
   await storageSet('personalEvents', STATE.personalEvents);
@@ -1891,8 +1915,9 @@ init();
 
 // 페이지를 오래 켜두는 동안에도, 5분마다 '시간이 지난 회의' 자동 체크 및 영어 한마디 교체 시점을 다시 확인합니다.
 setInterval(async ()=>{
-  const changed = STATE.hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
-  if(changed){
+  const meetingChanged = STATE.hasRealSyncedMeetings ? syncTasksFromMeetings() : false;
+  const eventChanged = syncPersonalEventTaskCompletion();
+  if(meetingChanged || eventChanged){
     await storageSet('personalTasks', STATE.tasks);
     renderTasks();
     renderProgress();
