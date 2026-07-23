@@ -703,11 +703,12 @@ async function addTask(){
   const text = input.value.trim();
   if(!text) return;
   const nextId = STATE.tasks.length ? Math.max(...STATE.tasks.map(t=>t.id))+1 : 1;
+  const taskDate = STATE.taskViewDate || todayStr();
   STATE.tasks.push({
     id: nextId,
     text,
     done: false,
-    date: todayStr(),
+    date: taskDate,
     priority: (prioritySelect && prioritySelect.value) || 'medium',
     memo: '',
     link: '',
