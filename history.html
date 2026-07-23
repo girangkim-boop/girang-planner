@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>전체 업무 이력</title>
+<link rel="preconnect" href="https://fastly.jsdelivr.net">
+<link rel="stylesheet" as="style" crossorigin
+  href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css">
+<style>
+  :root{
+    --bg:#EEF7FB;
+    --card:#FFFFFF;
+    --ink:#3D5266;
+    --muted:#8FA6B3;
+    --line:#DCEEF5;
+    --lavender:#BFE3F5;
+    --lavender-deep:#5FA8D3;
+    --mint:#C9EAD1;
+    --mint-deep:#5FAE74;
+    --peach:#FFD9A8;
+    --peach-deep:#E8973D;
+    --coral:#FF8B7A;
+    --radius:18px;
+    --shadow: 0 6px 20px rgba(70, 120, 150, 0.10);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:'Pretendard', -apple-system, "Apple SD Gothic Neo", sans-serif;
+    background:
+      radial-gradient(circle at 8% 8%, #DCEEF9 0%, transparent 40%),
+      radial-gradient(circle at 95% 15%, #DFF3E6 0%, transparent 35%),
+      var(--bg);
+    color:var(--ink);
+    min-height:100vh;
+    padding:24px;
+  }
+  .wrap{ max-width:720px; margin:0 auto; }
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between; margin-bottom:18px;
+  }
+  .topbar h1{ font-size:22px; font-weight:800; margin:0; letter-spacing:-0.5px; }
+  .back-link{
+    font-size:12.5px; color:var(--muted); text-decoration:none; font-weight:700;
+    display:inline-flex; align-items:center; gap:4px;
+  }
+  .back-link:hover{ color:var(--lavender-deep); }
+  .search-box{
+    width:100%; border:1px solid var(--line); border-radius:12px; padding:11px 14px;
+    font-size:14px; font-family:inherit; box-sizing:border-box; margin-bottom:18px;
+    background:var(--card); box-shadow:var(--shadow);
+  }
+  .month-group{
+    background:var(--card);
+    border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    border:1px solid var(--line);
+    margin-bottom:12px;
+    overflow:hidden;
+  }
+  .month-group summary{
+    list-style:none;
+    cursor:pointer;
+    padding:14px 18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    font-weight:800;
+    font-size:14px;
+  }
+  .month-group summary::-webkit-details-marker{ display:none; }
+  .month-group summary .chevron{
+    transition:transform 0.15s;
+    color:var(--muted);
+    font-size:12px;
+  }
+  .month-group[open] summary .chevron{ transform:rotate(90deg); }
+  .month-group summary .count{
+    font-size:11.5px; color:var(--muted); font-weight:700; margin-left:8px;
+  }
+  .month-body{ padding:0 18px 12px; }
+  .task-row{
+    display:flex; align-items:center; gap:9px;
+    padding:9px 2px; border-top:1px dashed var(--line); font-size:13.5px; cursor:pointer;
+  }
+  .task-row:first-child{ border-top:none; }
+  .task-row.done label{ color:var(--muted); text-decoration:line-through; }
+  .task-row label{ flex:1; cursor:pointer; }
+  .task-row input[type=checkbox]{ width:16px; height:16px; accent-color:var(--mint-deep); cursor:pointer; }
+  .priority-dot{ width:8px; height:8px; border-radius:50%; display:inline-block; flex-shrink:0; }
+  .memo-mark{ margin-left:4px; font-size:11px; }
+  .due-tag{ font-size:10.5px; color:var(--lavender-deep); font-weight:700; margin-left:5px; }
+  .due-tag.overdue{ color:var(--coral); }
+  .midlong-tag{
+    display:inline-block; font-size:10px; font-weight:800; color:var(--peach-deep);
+    background:#FFF3E5; padding:2px 7px; border-radius:999px; margin-bottom:3px;
+  }
+  .period-tag{
+    display:inline-block; font-size:9.5px; font-weight:800; color:var(--mint-deep);
+    background:#EAF3EC; padding:2px 7px; border-radius:999px; margin-right:3px;
+  }
+  .task-row .meta{ font-size:10.5px; color:var(--muted); white-space:nowrap; }
+  .empty{
+    font-size:13px; color:var(--muted); padding:24px; text-align:center;
+    background:var(--card); border-radius:var(--radius); box-shadow:var(--shadow);
+  }
+  /* 상세 편집 모달 (index.html과 동일한 스타일) */
+  .modal-overlay{
+    display:none; position:fixed; inset:0; background:rgba(95,168,211,0.20);
+    backdrop-filter:blur(2px);
+    z-index:100; align-items:center; justify-content:center; padding:20px;
+  }
+  .modal-panel{
+    background:
+      radial-gradient(circle at 100% 0%, #E4F2FA 0%, transparent 45%),
+      #fff;
+    border-radius:20px; box-shadow:0 20px 50px rgba(85,90,150,0.25);
+    border:1px solid var(--line);
+    width:100%; max-width:420px; padding:22px; max-height:88vh; overflow-y:auto; position:relative;
+  }
+  .modal-panel h3{
+    margin:0 0 16px; font-size:16px; font-weight:800;
+    display:flex; align-items:center; gap:7px;
+  }
+  .modal-panel h3::before{
+    content:''; width:9px; height:9px; border-radius:50%;
+    background:var(--lavender-deep); display:inline-block;
+  }
+  .modal-field{ margin-bottom:14px; }
+  .modal-field-row{ display:flex; gap:10px; }
+  .modal-field-row .modal-field{ flex:1; min-width:0; }
+  .modal-field label{ display:block; font-size:11.5px; font-weight:800; color:var(--muted); margin-bottom:5px; }
+  .modal-field input[type=text], .modal-field input[type=url], .modal-field input[type=date],
+  .modal-field textarea, .modal-field select{
+    width:100%; border:1px solid var(--line); background:#F7FCFE; border-radius:10px; padding:9px 10px;
+    font-size:13px; font-family:inherit; box-sizing:border-box; color:var(--ink);
+    transition:border-color 0.15s, box-shadow 0.15s;
+  }
+  .modal-field input:focus, .modal-field select:focus, .modal-field textarea:focus{
+    outline:none; border-color:var(--lavender-deep);
+    box-shadow:0 0 0 3px rgba(95,168,211,0.18); background:#fff;
+  }
+  .modal-field textarea{ resize:vertical; min-height:70px; }
+  .modal-link-preview{ margin-top:6px; font-size:12px; word-break:break-all; }
+  .modal-link-preview a{ color:var(--lavender-deep); font-weight:700; text-decoration:none; }
+  .modal-link-preview a:hover{ text-decoration:underline; }
+  .modal-hint{ font-size:11px; color:var(--muted); margin-top:4px; }
+  .modal-actions{ display:flex; justify-content:space-between; align-items:center; margin-top:18px; gap:8px; }
+  .modal-actions .left{ display:flex; gap:8px; }
+  .modal-btn{ border:none; border-radius:10px; padding:9px 16px; font-size:13px; font-weight:800; cursor:pointer; }
+  .modal-btn.save{ background:var(--mint); color:#3E6B54; }
+  .modal-btn.cancel{ background:#EAF5FA; color:var(--muted); }
+  .modal-btn.delete{ background:#FFEFF2; color:var(--coral); }
+  .modal-close-x{
+    position:absolute; top:16px; right:16px; border:none; background:transparent;
+    font-size:16px; color:var(--muted); cursor:pointer;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>🗂️ 전체 업무 이력</h1>
+    <a href="#" class="back-link" id="backLink">← 플래너로 돌아가기</a>
+  </div>
+  <input type="text" class="search-box" id="searchInput" placeholder="업무 이름으로 검색">
+  <div id="groupsWrap"></div>
+</div>
+
+<div class="modal-overlay" id="taskModalOverlay">
+  <div class="modal-panel">
+    <button class="modal-close-x" id="taskModalClose" aria-label="닫기">✕</button>
+    <h3>업무 상세</h3>
+    <div class="modal-field">
+      <label>업무 제목</label>
+      <input type="text" id="taskModalTitleInput">
+    </div>
+    <div class="modal-field">
+      <label>중장기 과제 연결 (선택)</label>
+      <select id="taskModalMidLong"></select>
+    </div>
+    <div class="modal-field-row">
+      <div class="modal-field">
+        <label>중요도</label>
+        <select id="taskModalPriority">
+          <option value="high">🔴 높음</option>
+          <option value="medium">🟣 보통</option>
+          <option value="low">🟢 낮음</option>
+        </select>
+      </div>
+      <div class="modal-field">
+        <label>완료목표일 (선택)</label>
+        <input type="date" id="taskModalDueDate">
+      </div>
+    </div>
+    <div class="modal-field">
+      <label>메모</label>
+      <textarea id="taskModalMemo" placeholder="업무 관련 메모를 남겨보세요"></textarea>
+    </div>
+    <div class="modal-field">
+      <label>관련 링크 (컨플루언스, 문서함, 첨부파일 링크 등)</label>
+      <input type="url" id="taskModalLink" placeholder="https://...">
+      <div class="modal-link-preview" id="taskModalLinkPreview"></div>
+      <div class="modal-hint">※ 실제 파일 업로드는 지원하지 않아요. 파일이 있는 곳의 링크를 붙여넣으면 여기서 바로 열 수 있어요.</div>
+    </div>
+    <div class="modal-actions">
+      <div class="left">
+        <button class="modal-btn cancel" id="taskModalCancel">취소</button>
+        <button class="modal-btn delete" id="taskModalDelete">삭제</button>
+      </div>
+      <button class="modal-btn save" id="taskModalSave">저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="history.js"></script>
+</body>
+</html>
