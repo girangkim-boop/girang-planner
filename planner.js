@@ -969,7 +969,11 @@ function renderCalendar(){
 
     let inner = `<span class="daynum">${day}</span>`;
     const dayTasks = tasksByDate[dateStr] || [];
-    if(dateStr <= todayS && dayTasks.length){
+    // 오늘 하루치 도장은 실시간으로 계속 자라는 대신, 퇴근시간(오후 5시반)이
+    // 지나야 "하루 마무리" 도장으로 찍히게 합니다. 지난 날짜는 항상 그대로 표시.
+    const now = new Date();
+    const isDayWrappedUp = dateStr < todayS || (now.getHours() > 17 || (now.getHours() === 17 && now.getMinutes() >= 30));
+    if(dateStr <= todayS && dayTasks.length && isDayWrappedUp){
       const doneCnt = dayTasks.filter(t=>t.done).length;
       const dayPct = Math.round(doneCnt/dayTasks.length*100);
       const dayStage = stageForPct(dayPct, dayTasks.length);
@@ -1895,4 +1899,5 @@ setInterval(async ()=>{
     renderMidLong();
   }
   renderEnglishQuote();
+  renderCalendar(); // 퇴근시간(오후 5시반)이 지나면 오늘 도장이 자동으로 찍히도록 다시 그림
 }, 5 * 60 * 1000);
