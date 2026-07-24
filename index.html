@@ -563,6 +563,16 @@
     background:#F1F1F1; color:var(--muted); font-size:11px; font-weight:800;
     display:flex; align-items:center; justify-content:center;
   }
+  .event-color-row{ display:flex; gap:8px; align-items:center; margin-top:4px; }
+  .event-color-swatch{
+    width:24px; height:24px; border-radius:50%; border:2px solid #fff;
+    box-shadow:0 0 0 1px rgba(0,0,0,0.12); cursor:pointer; padding:0;
+  }
+  .event-color-swatch.selected{ box-shadow:0 0 0 2px var(--ink); }
+  .event-color-swatch.reset{
+    background:#F1F1F1; color:var(--muted); font-size:11px; font-weight:800;
+    display:flex; align-items:center; justify-content:center;
+  }
   .tl-now{
     position:absolute; left:0; right:0; height:2px; background:var(--coral); z-index:3;
   }
@@ -1032,6 +1042,11 @@
     <div class="modal-field">
       <label>메모</label>
       <textarea id="eventModalMemo" placeholder="간단한 메모를 남겨보세요"></textarea>
+    </div>
+
+    <div class="modal-field">
+      <label>색상</label>
+      <div id="eventModalColorRow" class="event-color-row"></div>
     </div>
 
     <div class="modal-actions">

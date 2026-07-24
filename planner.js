@@ -922,6 +922,11 @@ function renderEventBars(year, month, daysInMonth, startWeekday){
           bar.style.width = (eRect.right - sRect.left) + 'px';
           bar.style.cursor = 'pointer';
           bar.style.pointerEvents = 'auto';
+          if(ev.color !== undefined && ev.color !== null && TIMELINE_COLOR_OPTIONS[ev.color]){
+            const c = TIMELINE_COLOR_OPTIONS[ev.color];
+            bar.style.background = c.border;
+            bar.style.color = '#fff';
+          }
           bar.addEventListener('click', (e)=>{
             e.stopPropagation();
             openEventModal(ev.startDate, ev.id);
@@ -1010,7 +1015,15 @@ function renderCalendar(){
     const MAX_SHOW = 5;
     dayMeetings.slice(0, MAX_SHOW).forEach(m=>{
       const startTime = (m.time||'').split('-')[0] || '';
-      inner += `<span class="mini-event ${m.manual ? 'manual' : ''}" ${m.manual ? `data-event-id="${m.eventId}"` : ''}>${startTime ? startTime+' ' : ''}${escapeHtml(m.title||'')}</span>`;
+      let styleAttr = '';
+      if(m.manual){
+        const ev = STATE.personalEvents.find(e => String(e.id) === String(m.eventId));
+        if(ev && ev.color !== undefined && ev.color !== null && TIMELINE_COLOR_OPTIONS[ev.color]){
+          const c = TIMELINE_COLOR_OPTIONS[ev.color];
+          styleAttr = ` style="background:${c.border}; color:#fff;"`;
+        }
+      }
+      inner += `<span class="mini-event ${m.manual ? 'manual' : ''}" ${m.manual ? `data-event-id="${m.eventId}"` : ''}${styleAttr}>${startTime ? startTime+' ' : ''}${escapeHtml(m.title||'')}</span>`;
     });
     if(dayMeetings.length > MAX_SHOW){
       inner += `<span class="mini-more">+${dayMeetings.length - MAX_SHOW}건 더</span>`;
@@ -1138,6 +1151,22 @@ function timeOptionsHtml(selected){
 
 let currentEventModalDate = null;
 let currentEventModalId = null;
+let currentEventModalColor = null;
+
+function renderEventColorRow(selected){
+  currentEventModalColor = selected !== undefined ? selected : null;
+  const row = document.getElementById('eventModalColorRow');
+  row.innerHTML =
+    TIMELINE_COLOR_OPTIONS.map((c,i)=>`<button type="button" class="event-color-swatch ${currentEventModalColor===i?'selected':''}" data-idx="${i}" title="${c.name}" style="background:${c.border}"></button>`).join('') +
+    `<button type="button" class="event-color-swatch reset ${currentEventModalColor===null?'selected':''}" data-idx="reset" title="기본색">↺</button>`;
+  row.querySelectorAll('.event-color-swatch').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      currentEventModalColor = btn.dataset.idx === 'reset' ? null : Number(btn.dataset.idx);
+      row.querySelectorAll('.event-color-swatch').forEach(b=>b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
+  });
+}
 
 function openEventModal(dateStr, eventId){
   currentEventModalDate = dateStr;
@@ -1157,6 +1186,7 @@ function openEventModal(dateStr, eventId){
     document.getElementById('eventModalEndTime').value = ev.endTime || '10:00';
     document.getElementById('eventModalMemo').value = ev.memo || '';
     document.getElementById('eventModalDelete').style.display = 'inline-block';
+    renderEventColorRow(ev.color !== undefined ? ev.color : null);
   } else {
     document.getElementById('eventModalHeading').textContent = '일정 추가';
     document.getElementById('eventModalTitleInput').value = '';
@@ -1166,6 +1196,7 @@ function openEventModal(dateStr, eventId){
     document.getElementById('eventModalEndTime').value = '10:00';
     document.getElementById('eventModalMemo').value = '';
     document.getElementById('eventModalDelete').style.display = 'none';
+    renderEventColorRow(null);
   }
   document.getElementById('eventModalOverlay').style.display = 'flex';
 }
@@ -1173,6 +1204,7 @@ function closeEventModal(){
   document.getElementById('eventModalOverlay').style.display = 'none';
   currentEventModalDate = null;
   currentEventModalId = null;
+  currentEventModalColor = null;
 }
 
 // 이 일정에서 자동 생성된 '오늘의 업무' 항목들을 정리하고 다시 만듭니다.
@@ -1238,7 +1270,7 @@ async function saveEventModal(){
   if(!endDate) endDate = startDate; // 기간을 선택 안 하면 당일만
 
   const id = currentEventModalId || `ev${Date.now()}`;
-  const ev = { id, title, startDate, endDate, startTime, endTime, memo };
+  const ev = { id, title, startDate, endDate, startTime, endTime, memo, color: currentEventModalColor };
 
   const idx = STATE.personalEvents.findIndex(e => String(e.id) === String(id));
   if(idx >= 0) STATE.personalEvents[idx] = ev;
@@ -1343,16 +1375,28 @@ function closeTimelineColorPopover(){
   const existing = document.getElementById('tlColorPopover');
   if(existing) existing.remove();
 }
-async function setTimelineColor(key, colorIndex){
+async function setTimelineColor(key, colorIndex, eventId){
   const colors = STATE.timelineColors || {};
   if(colorIndex === null) delete colors[key];
   else colors[key] = colorIndex;
   STATE.timelineColors = colors;
   await storageSet('timelineColors', colors);
+
+  // 내가 직접 추가한 일정이면, 캘린더 쪽 색상도 같이 맞춰줍니다 (서로 연동).
+  if(eventId){
+    const ev = STATE.personalEvents.find(e => String(e.id) === String(eventId));
+    if(ev){
+      ev.color = colorIndex;
+      await storageSet('personalEvents', STATE.personalEvents);
+      renderCalendar();
+      renderDayDetail(STATE.selectedDate);
+    }
+  }
+
   closeTimelineColorPopover();
   renderTimeline();
 }
-function openTimelineColorPopover(targetEl, key){
+function openTimelineColorPopover(targetEl, key, eventId){
   closeTimelineColorPopover();
   const pop = document.createElement('div');
   pop.id = 'tlColorPopover';
@@ -1370,7 +1414,7 @@ function openTimelineColorPopover(targetEl, key){
     btn.addEventListener('click', (e)=>{
       e.stopPropagation();
       const idx = btn.dataset.idx;
-      setTimelineColor(key, idx === 'reset' ? null : Number(idx));
+      setTimelineColor(key, idx === 'reset' ? null : Number(idx), eventId);
     });
   });
   setTimeout(()=>{
@@ -1428,8 +1472,15 @@ function renderTimeline(){
     div.style.width = widthCalc;
 
     const colorKey = timelineColorKey(m, viewDate);
-    const colorIdx = (STATE.timelineColors || {})[colorKey];
-    if(colorIdx !== undefined && TIMELINE_COLOR_OPTIONS[colorIdx]){
+    // 내가 직접 추가한 일정이면, 캘린더에서 정한 색상을 우선 적용합니다 (서로 연동).
+    let linkedEvent = null;
+    if(m.manual && m.eventId){
+      linkedEvent = STATE.personalEvents.find(e => String(e.id) === String(m.eventId));
+    }
+    const colorIdx = (linkedEvent && linkedEvent.color !== undefined && linkedEvent.color !== null)
+      ? linkedEvent.color
+      : (STATE.timelineColors || {})[colorKey];
+    if(colorIdx !== undefined && colorIdx !== null && TIMELINE_COLOR_OPTIONS[colorIdx]){
       const c = TIMELINE_COLOR_OPTIONS[colorIdx];
       div.style.background = c.bg;
       div.style.borderLeftColor = c.border;
@@ -1438,7 +1489,7 @@ function renderTimeline(){
     div.style.cursor = 'pointer';
     div.addEventListener('click', (e)=>{
       e.stopPropagation();
-      openTimelineColorPopover(div, colorKey);
+      openTimelineColorPopover(div, colorKey, m.eventId || null);
     });
 
     if(m.manual){
