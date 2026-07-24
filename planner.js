@@ -1454,6 +1454,29 @@ function renderTimeline(){
     if(startMin === null || endMin === null) return;
     eventObjs.push({ m, startMin, endMin });
   });
+
+  // 연차도 타임라인에 표시합니다. "종일"이면 하루 전체, "HH:MM~HH:MM"이면 그 시간만.
+  const leaveStr = STATE.leave ? STATE.leave[viewDate] : null;
+  if(leaveStr){
+    const segments = leaveStr.split(',').map(s=>s.trim()).filter(Boolean);
+    segments.forEach(seg=>{
+      let sMin, eMin, label;
+      if(seg.includes('~')){
+        const [s,e] = seg.split('~').map(x=>x.trim());
+        sMin = timeToMinutes(s); eMin = timeToMinutes(e);
+        label = `연차 ${seg}`;
+      } else {
+        sMin = startHour*60; eMin = endHour*60; // 종일
+        label = '연차 (종일)';
+      }
+      if(sMin === null || eMin === null) return;
+      eventObjs.push({
+        m: { title: label, time:'', manual:true, isLeave:true },
+        startMin: sMin, endMin: eMin
+      });
+    });
+  }
+
   const laidOut = layoutTimelineEvents(eventObjs);
 
   laidOut.forEach(({m, startMin, endMin, _col, _colCount})=>{
@@ -1485,6 +1508,11 @@ function renderTimeline(){
       div.style.background = c.bg;
       div.style.borderLeftColor = c.border;
       div.style.color = c.text;
+    } else if(m.isLeave){
+      // 커스텀 색이 없으면, 캘린더의 연차 색(피치)을 기본으로 씁니다.
+      div.style.background = 'rgba(255,217,168,0.5)';
+      div.style.borderLeftColor = 'var(--peach-deep)';
+      div.style.color = '#7A5B12';
     }
     div.style.cursor = 'pointer';
     div.addEventListener('click', (e)=>{
