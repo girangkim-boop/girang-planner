@@ -1044,6 +1044,18 @@ function renderCalendar(){
       if(cell) openEventModal(cell.dataset.date, chip.dataset.eventId);
     });
   });
+  document.querySelectorAll('.mini-more').forEach(el=>{
+    el.addEventListener('click', (e)=>{
+      e.stopPropagation(); // 날짜 셀의 기본 클릭(일정 추가 팝업)이 같이 뜨지 않도록 막습니다.
+      const cell = el.closest('.cal-cell[data-date]');
+      if(!cell) return;
+      STATE.selectedDate = cell.dataset.date;
+      renderCalendar();
+      renderDayDetail(STATE.selectedDate);
+      const detailCard = document.getElementById('dayDetailCard');
+      if(detailCard) detailCard.scrollIntoView({ behavior:'smooth', block:'nearest' });
+    });
+  });
 }
 
 /* ===================================================================
