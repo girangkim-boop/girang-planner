@@ -222,7 +222,8 @@ let STATE = {
   calDate: new Date(),
   selectedDate: todayStr(),
   teamWeekStart: startOfWeek(new Date()),
-  taskViewDate: todayStr()
+  taskViewDate: todayStr(),
+  timelineViewDate: todayStr()
 };
 
 // 일요일을 한 주의 시작으로 봅니다.
@@ -333,6 +334,7 @@ async function init(){
   const midlong = rawMidlong || DEFAULT_MIDLONG;
   const teamFallback = await storageGet('teamSchedule', DEFAULT_TEAM);
   const personalEvents = await storageGet('personalEvents', []);
+  STATE.timelineColors = await storageGet('timelineColors', {});
 
   const hasRealSyncedMeetings = !!(synced && synced.meetings && synced.meetings.length);
   STATE.hasRealSyncedMeetings = hasRealSyncedMeetings;
@@ -708,6 +710,22 @@ document.getElementById('taskTodayBtn').addEventListener('click', ()=>{
   STATE.taskViewDate = todayStr();
   renderTasks();
   renderProgress();
+});
+document.getElementById('timelinePrevDay').addEventListener('click', ()=>{
+  const d = new Date((STATE.timelineViewDate || todayStr()) + 'T00:00:00');
+  d.setDate(d.getDate() - 1);
+  STATE.timelineViewDate = dateToStr(d);
+  renderTimeline();
+});
+document.getElementById('timelineNextDay').addEventListener('click', ()=>{
+  const d = new Date((STATE.timelineViewDate || todayStr()) + 'T00:00:00');
+  d.setDate(d.getDate() + 1);
+  STATE.timelineViewDate = dateToStr(d);
+  renderTimeline();
+});
+document.getElementById('timelineTodayBtn').addEventListener('click', ()=>{
+  STATE.timelineViewDate = todayStr();
+  renderTimeline();
 });
 document.getElementById('newTaskInput').addEventListener('keydown', (e)=>{
   if(e.key === 'Enter') addTask();
@@ -1259,6 +1277,95 @@ document.getElementById('eventModalOverlay').addEventListener('click', (e)=>{
 /* ===================================================================
    타임라인 (09:00 ~ 18:00)
 =================================================================== */
+// 겹치는 시간대의 블럭들을 같은 줄에 나란히(컬럼 분할) 배치하기 위한 계산
+function layoutTimelineEvents(events){
+  const sorted = events.slice().sort((a,b)=> a.startMin - b.startMin || a.endMin - b.endMin);
+  const clusters = [];
+  let current = [];
+  let clusterEnd = -Infinity;
+  sorted.forEach(ev=>{
+    if(current.length && ev.startMin >= clusterEnd){
+      clusters.push(current);
+      current = [];
+      clusterEnd = -Infinity;
+    }
+    current.push(ev);
+    clusterEnd = Math.max(clusterEnd, ev.endMin);
+  });
+  if(current.length) clusters.push(current);
+
+  clusters.forEach(cluster=>{
+    const columns = []; // 각 컬럼의 마지막 종료 시각
+    cluster.forEach(ev=>{
+      let placed = false;
+      for(let i=0;i<columns.length;i++){
+        if(ev.startMin >= columns[i]){
+          columns[i] = ev.endMin;
+          ev._col = i;
+          placed = true;
+          break;
+        }
+      }
+      if(!placed){
+        columns.push(ev.endMin);
+        ev._col = columns.length - 1;
+      }
+    });
+    cluster.forEach(ev=>{ ev._colCount = columns.length; });
+  });
+  return sorted;
+}
+
+// 타임라인 블럭에 사용자가 고를 수 있는 색상 5가지
+const TIMELINE_COLOR_OPTIONS = [
+  { name:'코랄(중요)', bg:'rgba(255,107,107,0.5)', border:'#E85D5D', text:'#8A2E2E' },
+  { name:'옐로우',    bg:'rgba(255,209,102,0.5)', border:'#E0AC3F', text:'#7A5B12' },
+  { name:'그린',      bg:'rgba(6,214,160,0.5)',   border:'#0DAE85', text:'#0C5C46' },
+  { name:'블루',      bg:'rgba(77,150,255,0.5)',  border:'#3A7FE0', text:'#1F4E8C' },
+  { name:'퍼플',      bg:'rgba(157,111,255,0.5)', border:'#8656E0', text:'#4A2E8C' }
+];
+function timelineColorKey(m, viewDate){
+  return `${m.date || viewDate}|${m.time}|${m.title}`;
+}
+function closeTimelineColorPopover(){
+  const existing = document.getElementById('tlColorPopover');
+  if(existing) existing.remove();
+}
+async function setTimelineColor(key, colorIndex){
+  const colors = STATE.timelineColors || {};
+  if(colorIndex === null) delete colors[key];
+  else colors[key] = colorIndex;
+  STATE.timelineColors = colors;
+  await storageSet('timelineColors', colors);
+  closeTimelineColorPopover();
+  renderTimeline();
+}
+function openTimelineColorPopover(targetEl, key){
+  closeTimelineColorPopover();
+  const pop = document.createElement('div');
+  pop.id = 'tlColorPopover';
+  pop.className = 'tl-color-popover';
+  pop.innerHTML =
+    TIMELINE_COLOR_OPTIONS.map((c,i)=>`<button class="tl-color-swatch" data-idx="${i}" title="${c.name}" style="background:${c.border}"></button>`).join('') +
+    `<button class="tl-color-swatch tl-color-reset" data-idx="reset" title="기본색으로">↺</button>`;
+  document.body.appendChild(pop);
+
+  const rect = targetEl.getBoundingClientRect();
+  pop.style.top = (window.scrollY + rect.bottom + 4) + 'px';
+  pop.style.left = (window.scrollX + rect.left) + 'px';
+
+  pop.querySelectorAll('.tl-color-swatch').forEach(btn=>{
+    btn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      const idx = btn.dataset.idx;
+      setTimelineColor(key, idx === 'reset' ? null : Number(idx));
+    });
+  });
+  setTimeout(()=>{
+    document.addEventListener('click', closeTimelineColorPopover, { once:true });
+  }, 0);
+}
+
 function renderTimeline(){
   const startHour = 7, endHour = 23;
   const el = document.getElementById('timeline');
@@ -1269,20 +1376,59 @@ function renderTimeline(){
   el.innerHTML = html;
 
   const today = todayStr();
-  const todaysMeetings = STATE.meetings.filter(m => (!m.date || m.date === today) && m.time && m.time.includes('-'));
+  const viewDate = STATE.timelineViewDate || today;
+  const isViewingToday = viewDate === today;
+  const dayMeetingsForTimeline = STATE.meetings.filter(m => (!m.date || m.date === viewDate) && m.time && m.time.includes('-'));
+
+  const labelEl = document.getElementById('timelineDayLabel');
+  if(labelEl){
+    const dLabel = new Date(viewDate + 'T00:00:00');
+    const dowNames = ['일','월','화','수','목','금','토'];
+    labelEl.textContent = isViewingToday ? '오늘' : `${dLabel.getMonth()+1}/${dLabel.getDate()} (${dowNames[dLabel.getDay()]})`;
+  }
 
   const hourHeight = 52;
-  todaysMeetings.forEach(m=>{
+  const BASE_LEFT = 38, RIGHT_MARGIN = 10, GAP = 3;
+  const MARGIN_TOTAL = BASE_LEFT + RIGHT_MARGIN;
+
+  const eventObjs = [];
+  dayMeetingsForTimeline.forEach(m=>{
     const [startStr, endStr] = m.time.split('-').map(s=>s.trim());
     const startMin = timeToMinutes(startStr), endMin = timeToMinutes(endStr);
     if(startMin === null || endMin === null) return;
+    eventObjs.push({ m, startMin, endMin });
+  });
+  const laidOut = layoutTimelineEvents(eventObjs);
+
+  laidOut.forEach(({m, startMin, endMin, _col, _colCount})=>{
     const dayStartMin = startHour*60;
     const top = ((startMin - dayStartMin)/60)*hourHeight;
     const height = Math.max(((endMin-startMin)/60)*hourHeight, 20);
+    // JS로 픽셀 너비를 미리 재지 않고, 실제 렌더링 시점의 너비를 CSS calc()가
+    // 그때그때 계산하도록 해서, 측정 시점이 어긋나 한쪽으로 쏠리는 문제를 없앱니다.
+    const leftCalc = `calc(${BASE_LEFT}px + (100% - ${MARGIN_TOTAL}px) * ${_col}/${_colCount})`;
+    const widthCalc = `calc((100% - ${MARGIN_TOTAL}px)/${_colCount}${_col < _colCount-1 ? ` - ${GAP}px` : ''})`;
     const div = document.createElement('div');
     div.className = 'tl-event' + (m.manual ? ' manual' : '');
     div.style.top = top + 'px';
     div.style.height = height + 'px';
+    div.style.left = leftCalc;
+    div.style.width = widthCalc;
+
+    const colorKey = timelineColorKey(m, viewDate);
+    const colorIdx = (STATE.timelineColors || {})[colorKey];
+    if(colorIdx !== undefined && TIMELINE_COLOR_OPTIONS[colorIdx]){
+      const c = TIMELINE_COLOR_OPTIONS[colorIdx];
+      div.style.background = c.bg;
+      div.style.borderLeftColor = c.border;
+      div.style.color = c.text;
+    }
+    div.style.cursor = 'pointer';
+    div.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      openTimelineColorPopover(div, colorKey);
+    });
+
     if(m.manual){
       div.innerHTML = `<div class="tl-event-title">${escapeHtml(m.title)}</div>`;
     } else {
@@ -1292,14 +1438,16 @@ function renderTimeline(){
     el.appendChild(div);
   });
 
-  const now = new Date();
-  const nowMin = now.getHours()*60+now.getMinutes();
-  if(nowMin >= startHour*60 && nowMin <= endHour*60){
-    const top = ((nowMin-startHour*60)/60)*hourHeight;
-    const line = document.createElement('div');
-    line.className = 'tl-now';
-    line.style.top = top+'px';
-    el.appendChild(line);
+  if(isViewingToday){
+    const now = new Date();
+    const nowMin = now.getHours()*60+now.getMinutes();
+    if(nowMin >= startHour*60 && nowMin <= endHour*60){
+      const top = ((nowMin-startHour*60)/60)*hourHeight;
+      const line = document.createElement('div');
+      line.className = 'tl-now';
+      line.style.top = top+'px';
+      el.appendChild(line);
+    }
   }
 }
 function timeToMinutes(str){
@@ -1439,7 +1587,334 @@ const ENGLISH_QUOTES = [
   { en:"Breathe. You've got this.", kr:"숨 고르고, 잘하고 있어요." },
   { en:"Small wins add up.", kr:"작은 성취가 쌓인다." },
   { en:"Clarity comes from action.", kr:"명확함은 행동에서 온다." },
-  { en:"Keep it simple today.", kr:"오늘은 단순하게." }
+  { en:"Keep it simple today.", kr:"오늘은 단순하게." },
+  { en:"Trust the process.", kr:"과정을 믿어라." },
+  { en:"Every expert was once a beginner.", kr:"모든 전문가도 처음엔 초보였다." },
+  { en:"Do it scared.", kr:"두려워도 일단 해보자." },
+  { en:"Discipline is choosing what you want most.", kr:"규율은 가장 원하는 것을 선택하는 일이다." },
+  { en:"You don't have to be great to start.", kr:"완벽하지 않아도 시작할 수 있다." },
+  { en:"Momentum builds motivation.", kr:"작은 추진력이 동기를 만든다." },
+  { en:"Slow progress is still progress.", kr:"느려도 나아가고 있는 것이다." },
+  { en:"Make today count.", kr:"오늘을 의미 있게." },
+  { en:"Stay curious.", kr:"호기심을 잃지 말자." },
+  { en:"Good things take time.", kr:"좋은 일은 시간이 걸린다." },
+  { en:"You are doing better than you think.", kr:"생각보다 잘하고 있어요." },
+  { en:"Celebrate small victories.", kr:"작은 승리를 축하하자." },
+  { en:"Effort compounds.", kr:"노력은 쌓인다." },
+  { en:"Simplify, then focus.", kr:"단순화하고, 집중하자." },
+  { en:"Be patient with yourself.", kr:"스스로에게 조금 더 관대하게." },
+  { en:"Action cures fear.", kr:"행동이 두려움을 이긴다." },
+  { en:"One page a day is a book a year.", kr:"하루 한 페이지면 일 년에 책 한 권." },
+  { en:"Show up, even on hard days.", kr:"힘든 날에도 나타나는 것." },
+  { en:"Your pace is enough.", kr:"지금의 속도로도 충분해요." },
+  { en:"Choose progress over perfect.", kr:"완벽보다 전진을 택하자." },
+  { en:"Little by little, a little becomes a lot.", kr:"조금씩 쌓이면 많아진다." },
+  { en:"Done today beats perfect someday.", kr:"오늘의 완료가 언젠가의 완벽보다 낫다." },
+  { en:"Energy flows where focus goes.", kr:"집중하는 곳에 에너지가 흐른다." },
+  { en:"Quiet progress is still progress.", kr:"조용한 전진도 전진이다." },
+  { en:"Today is a fresh page.", kr:"오늘은 새로운 페이지." },
+  { en:"Steady hands finish the race.", kr:"꾸준한 손이 결승선에 닿는다." },
+  { en:"Small habits, big changes.", kr:"작은 습관이 큰 변화를 만든다." },
+  { en:"You are allowed to rest.", kr:"쉬어도 괜찮아요." },
+  { en:"Growth is rarely comfortable.", kr:"성장은 좀처럼 편하지 않다." },
+  { en:"Keep showing up for yourself.", kr:"스스로를 위해 계속 나타나기." },
+  { en:"Direction matters more than speed.", kr:"속도보다 방향이 중요하다." },
+  { en:"Finish what you start today.", kr:"오늘 시작한 건 오늘 끝내기." },
+  { en:"Progress loves patience.", kr:"전진은 인내를 좋아한다." },
+  { en:"A calm mind gets more done.", kr:"차분한 마음이 더 많은 걸 해낸다." },
+  { en:"Turn intentions into actions.", kr:"의도를 행동으로 바꾸자." },
+  { en:"You're closer than you think.", kr:"생각보다 가까이 왔어요." },
+  { en:"Tiny steps still move you forward.", kr:"작은 걸음도 앞으로 나아가는 것." },
+  { en:"Focus on the next step, not the whole staircase.", kr:"계단 전체보다 다음 한 칸에 집중하자." },
+  { en:"Be proud of how far you've come.", kr:"여기까지 온 것에 자부심을 가지세요." },
+  { en:"Consistency is a quiet superpower.", kr:"꾸준함은 조용한 초능력이다." },
+  { en:"Your future self will thank you.", kr:"미래의 나에게 좋은 선물을." },
+  { en:"Start messy, refine later.", kr:"일단 시작하고, 다듬는 건 나중에." },
+  { en:"Don't wait for motivation, create momentum.", kr:"동기를 기다리지 말고 흐름을 만들자." },
+  { en:"Small effort, repeated daily, wins.", kr:"매일의 작은 노력이 결국 이긴다." },
+  { en:"Peace begins with a clear list.", kr:"평온은 정리된 목록에서 시작된다." },
+  { en:"Today's work is tomorrow's ease.", kr:"오늘의 수고가 내일의 여유가 된다." },
+  { en:"Be kind to your future self.", kr:"미래의 나에게 다정하게." },
+  { en:"You don't need to rush, just move.", kr:"서두르지 않아도 되니 움직이기만." },
+  { en:"Every sunset is a new dawn's promise.", kr:"모든 노을은 새 아침의 약속이다." },
+  { en:"Better an oops than a what if.", kr:"'만약에'보다는 '어이쿠'가 낫다." },
+  { en:"Small steps still count as moving.", kr:"작은 걸음도 움직이는 것이다." },
+  { en:"Your only limit is your mind.", kr:"유일한 한계는 마음뿐이다." },
+  { en:"Fall seven times, stand up eight.", kr:"일곱 번 넘어져도 여덟 번 일어나라." },
+  { en:"Not all storms come to disrupt your life.", kr:"모든 폭풍이 삶을 흔들려는 건 아니다." },
+  { en:"Difficult roads lead to beautiful destinations.", kr:"험한 길이 아름다운 목적지로 이어진다." },
+  { en:"Do what you can with what you have.", kr:"가진 것으로 할 수 있는 걸 하자." },
+  { en:"The best view comes after the hardest climb.", kr:"가장 힘든 오르막 뒤에 최고의 전망이 있다." },
+  { en:"Push yourself, no one else will.", kr:"나를 밀어붙이는 건 결국 나 자신이다." },
+  { en:"Great things never came from comfort zones.", kr:"위대한 일은 안전지대에서 나오지 않는다." },
+  { en:"Dream it, wish it, do it.", kr:"꿈꾸고, 바라고, 실행하라." },
+  { en:"Success doesn't just find you.", kr:"성공은 저절로 찾아오지 않는다." },
+  { en:"It always seems impossible until it's done.", kr:"해내기 전까진 늘 불가능해 보인다." },
+  { en:"Wake up with determination, sleep with satisfaction.", kr:"결심으로 깨어나, 만족으로 잠들자." },
+  { en:"Little things make big days.", kr:"작은 것들이 큰 하루를 만든다." },
+  { en:"Don't stop when you're tired, stop when you're done.", kr:"지쳤을 때가 아니라 끝났을 때 멈추자." },
+  { en:"Dream big and dare to fail.", kr:"크게 꿈꾸고 실패를 두려워 말자." },
+  { en:"Nothing worth having comes easy.", kr:"가질 만한 가치가 있는 건 쉽게 오지 않는다." },
+  { en:"A little progress each day adds up.", kr:"매일의 작은 전진이 쌓인다." },
+  { en:"Well begun is half done.", kr:"시작이 반이다." },
+  { en:"Hard work beats talent when talent doesn't work hard.", kr:"재능이 게으르면 노력이 이긴다." },
+  { en:"Success is the sum of small efforts.", kr:"성공은 작은 노력들의 합이다." },
+  { en:"Believe you can and you're halfway there.", kr:"할 수 있다고 믿으면 이미 반은 온 것." },
+  { en:"Your attitude determines your direction.", kr:"태도가 방향을 정한다." },
+  { en:"Do what is right, not what is easy.", kr:"쉬운 것 말고 옳은 것을 하자." },
+  { en:"Strive for progress, not perfection.", kr:"완벽이 아니라 전진을 추구하자." },
+  { en:"Don't count the days, make the days count.", kr:"날짜를 세지 말고, 하루하루를 의미 있게." },
+  { en:"You are stronger than you know.", kr:"생각보다 당신은 강하다." },
+  { en:"A goal without a plan is just a wish.", kr:"계획 없는 목표는 소망일 뿐." },
+  { en:"Doubt kills more dreams than failure ever will.", kr:"실패보다 의심이 더 많은 꿈을 죽인다." },
+  { en:"Today's accomplishments were yesterday's impossibilities.", kr:"오늘의 성취는 어제의 불가능이었다." },
+  { en:"Do good today, thank yourself tomorrow.", kr:"오늘 잘 해두면, 내일의 내가 고마워한다." },
+  { en:"The secret of getting ahead is getting started.", kr:"앞서가는 비결은 일단 시작하는 것." },
+  { en:"You are capable of amazing things.", kr:"당신은 놀라운 일을 해낼 수 있다." },
+  { en:"Work hard in silence, let success speak.", kr:"조용히 노력하고, 성공이 말하게 하라." },
+  { en:"Little by little, the impossible becomes possible.", kr:"조금씩, 불가능이 가능이 된다." },
+  { en:"Never give up on a good day.", kr:"좋은 날을 포기하지 말자." },
+  { en:"Stay positive, work hard, make it happen.", kr:"긍정적으로, 열심히, 이뤄내자." },
+  { en:"Great things take time.", kr:"위대한 일은 시간이 걸린다." },
+  { en:"Wherever you are, be all there.", kr:"어디에 있든, 온전히 그곳에 있자." },
+  { en:"Don't wish it were easier, wish you were better.", kr:"쉽길 바라지 말고, 더 나아지길 바라자." },
+  { en:"Success usually comes to those too busy to look for it.", kr:"성공은 바빠서 찾을 틈 없는 이에게 온다." },
+  { en:"Be so good they can't ignore you.", kr:"무시할 수 없을 만큼 잘하자." },
+  { en:"Opportunities don't happen, you create them.", kr:"기회는 오는 게 아니라 만드는 것." },
+  { en:"You get in life what you have the courage to ask for.", kr:"용기 내어 요청한 만큼 얻는다." },
+  { en:"Don't limit your challenges, challenge your limits.", kr:"도전을 제한하지 말고, 한계에 도전하라." },
+  { en:"What you get by achieving your goals is who you become.", kr:"목표를 이루며 얻는 건, 되어가는 나 자신이다." },
+  { en:"The harder you work, the luckier you get.", kr:"열심히 할수록 운도 따른다." },
+  { en:"Focus on the step in front of you, not the whole staircase.", kr:"계단 전체 말고, 눈앞의 한 칸에 집중하자." },
+  { en:"You don't have to see the whole staircase.", kr:"계단 전체를 다 볼 필요는 없다." },
+  { en:"Time you enjoy wasting is not wasted time.", kr:"즐겁게 쓴 시간은 낭비가 아니다." },
+  { en:"The way to get started is to quit talking and begin doing.", kr:"시작하는 법은, 말을 멈추고 행동하는 것." },
+  { en:"Perfection is not attainable, but chasing it gets us excellence.", kr:"완벽은 못 이뤄도, 쫓다 보면 탁월함에 닿는다." },
+  { en:"I find that the harder I work, the more luck I have.", kr:"열심히 할수록 더 많은 운이 따랐다." },
+  { en:"Don't be afraid to give up the good for the great.", kr:"더 나은 것을 위해 좋은 것을 놓아줄 용기." },
+  { en:"Fix your eyes on the goal, not the obstacles.", kr:"장애물이 아니라 목표에 시선을 두자." },
+  { en:"You are never too old to set a new goal.", kr:"새 목표를 세우기에 늦은 나이는 없다." },
+  { en:"Everything you can imagine is real.", kr:"상상할 수 있는 모든 것은 현실이 될 수 있다." },
+  { en:"It does not matter how slowly you go.", kr:"얼마나 느리게 가는지는 중요하지 않다." },
+  { en:"Whether you think you can or can't, you're right.", kr:"할 수 있다고 믿든 못한다고 믿든, 맞는 말이 된다." },
+  { en:"Winners are not afraid of losing.", kr:"승자는 지는 것을 두려워하지 않는다." },
+  { en:"If you get tired, learn to rest, not to quit.", kr:"지치면 쉬는 법을 배우되, 포기하지 말자." },
+  { en:"A year from now you may wish you had started today.", kr:"1년 후, 오늘 시작하지 않은 걸 후회할지도." },
+  { en:"Only I can change my life.", kr:"내 삶을 바꿀 수 있는 건 나뿐이다." },
+  { en:"There is no elevator to success, only stairs.", kr:"성공으로 가는 엘리베이터는 없고, 계단뿐이다." },
+  { en:"Do something today your future self will thank you for.", kr:"미래의 나에게 고마움을 받을 오늘의 행동." },
+  { en:"Positive anything is better than negative nothing.", kr:"긍정적인 무언가는 부정적인 아무것보다 낫다." },
+  { en:"Success is not final, failure is not fatal.", kr:"성공은 끝이 아니고, 실패도 치명적이지 않다." },
+  { en:"Your limitation is only your imagination.", kr:"한계는 오직 상상 속에만 있다." },
+  { en:"Sometimes later becomes never.", kr:"나중은 때때로 영원히 오지 않는다." },
+  { en:"Great works are performed not by strength but by perseverance.", kr:"위대한 일은 힘이 아니라 끈기로 이뤄진다." },
+  { en:"The expert in anything was once a beginner.", kr:"모든 전문가도 한때는 초보였다." },
+  { en:"You are the sky, everything else is just weather.", kr:"당신은 하늘이고, 나머지는 그저 날씨일 뿐." },
+  { en:"Habits are the compound interest of self-improvement.", kr:"습관은 자기계발의 복리 이자다." },
+  { en:"The pain of discipline weighs less than regret.", kr:"절제의 고통은 후회보다 가볍다." },
+  { en:"Motivation gets you going, habit keeps you going.", kr:"동기는 출발시키고, 습관은 계속 가게 한다." },
+  { en:"You do not rise to the level of your goals.", kr:"목표의 수준까지 오르는 게 아니라," },
+  { en:"You fall to the level of your systems.", kr:"시스템의 수준으로 떨어질 뿐이다." },
+  { en:"Every action is a vote for who you want to become.", kr:"모든 행동은 되고 싶은 나를 향한 한 표다." },
+  { en:"Master the boring basics.", kr:"지루한 기본기부터 마스터하자." },
+  { en:"A small change today changes tomorrow's trajectory.", kr:"오늘의 작은 변화가 내일의 궤적을 바꾼다." },
+  { en:"Never let the future disturb you.", kr:"미래가 오늘을 흔들게 두지 말자." },
+  { en:"He who has a why can bear almost any how.", kr:"이유가 있는 사람은 어떤 방법도 견딘다." },
+  { en:"What stands in the way becomes the way.", kr:"가로막던 것이 결국 길이 된다." },
+  { en:"The impediment to action advances action.", kr:"행동을 막는 장애가 오히려 행동을 앞당긴다." },
+  { en:"Waste no more time arguing about a good life.", kr:"좋은 삶에 대해 논쟁하는 대신, 살아가자." },
+  { en:"You have power over your mind, not outside events.", kr:"바깥 사건이 아니라 내 마음은 내가 다스린다." },
+  { en:"First say to yourself what you would be.", kr:"먼저 되고 싶은 나를 그려보라." },
+  { en:"Confidence comes not from always being right.", kr:"자신감은 늘 옳아서 오는 게 아니라," },
+  { en:"but from not fearing to be wrong.", kr:"틀려도 두렵지 않은 데서 온다." },
+  { en:"To improve is to change often.", kr:"나아진다는 건, 자주 바뀐다는 것." },
+  { en:"Not how long, but how well you have lived.", kr:"얼마나 오래가 아니라, 얼마나 잘 살았는가." },
+  { en:"He who is brave is free.", kr:"용감한 자는 자유롭다." },
+  { en:"Knowing yourself is the beginning of all wisdom.", kr:"자신을 아는 것이 모든 지혜의 시작이다." },
+  { en:"An unexamined life is not worth living.", kr:"성찰 없는 삶은 살 가치가 없다." },
+  { en:"We suffer more in imagination than in reality.", kr:"현실보다 상상 속에서 더 괴로워한다." },
+  { en:"It's not what happens, but how you react.", kr:"무슨 일이 아니라, 어떻게 반응하느냐다." },
+  { en:"The soul becomes dyed with the color of its thoughts.", kr:"영혼은 생각의 색으로 물든다." },
+  { en:"Very little is needed to make a happy life.", kr:"행복한 삶에는 아주 적은 것만 필요하다." },
+  { en:"Freedom is not being controlled by anything.", kr:"자유란 무엇에도 휘둘리지 않는 것." },
+  { en:"Choose not to be harmed and you won't feel harmed.", kr:"상처받지 않기로 하면, 상처받지 않는다." },
+  { en:"Man is disturbed not by things, but by his view of them.", kr:"사람은 사건이 아니라 그 해석에 흔들린다." },
+  { en:"Every new beginning comes from some other beginning's end.", kr:"모든 새 시작은 어떤 끝에서 온다." },
+  { en:"Do not spoil what you have by desiring what you don't.", kr:"없는 걸 바라다 있는 걸 망치지 말자." },
+  { en:"You cannot control the wind, but you can adjust your sails.", kr:"바람은 못 바꿔도, 돛은 조정할 수 있다." },
+  { en:"Change your thoughts and you change your world.", kr:"생각을 바꾸면 세상이 바뀐다." },
+  { en:"Simplicity is the ultimate sophistication.", kr:"단순함이 최고의 정교함이다." },
+  { en:"Less is more.", kr:"적을수록 좋다." },
+  { en:"Have nothing that is not useful or beautiful.", kr:"쓸모없거나 아름답지 않은 건 두지 말자." },
+  { en:"Clarity precedes success.", kr:"명확함이 성공보다 먼저 온다." },
+  { en:"Order and simplification are the first steps.", kr:"정돈과 단순화가 첫걸음이다." },
+  { en:"A cluttered space is a cluttered mind.", kr:"어지러운 공간은 어지러운 마음이다." },
+  { en:"Simplify, then add lightness.", kr:"단순화하고, 가볍게 만들자." },
+  { en:"The ability to simplify means to eliminate the unnecessary.", kr:"단순화란 불필요함을 덜어내는 능력이다." },
+  { en:"Focus is saying no to a thousand things.", kr:"집중은 천 가지에 아니오라고 말하는 것." },
+  { en:"What you don't do determines what you can do.", kr:"안 하는 것이, 할 수 있는 것을 결정한다." },
+  { en:"Concentrate all your thoughts upon the work at hand.", kr:"지금 하는 일에 모든 생각을 모으자." },
+  { en:"The successful warrior is the average person with laser focus.", kr:"성공한 이는 평범해도 레이저 같은 집중을 가진 사람이다." },
+  { en:"Where focus goes, energy flows.", kr:"집중이 향하는 곳으로 에너지가 흐른다." },
+  { en:"Starve distraction, feed focus.", kr:"산만함은 굶기고, 집중은 먹이자." },
+  { en:"You can do anything, but not everything.", kr:"무엇이든 할 수 있지만, 전부는 아니다." },
+  { en:"One thing at a time, most important thing first.", kr:"한 번에 하나씩, 가장 중요한 것부터." },
+  { en:"Simplicity boils down to two steps: identify essential, eliminate rest.", kr:"단순함이란 본질을 찾고 나머지를 없애는 것." },
+  { en:"Rest and self-care are essential.", kr:"휴식과 자기돌봄은 필수적이다." },
+  { en:"Almost everything will work again if unplugged.", kr:"거의 모든 건 잠깐 멈추면 다시 작동한다." },
+  { en:"Take a break, it's not the end of the road.", kr:"잠시 쉬어도, 끝이 아니다." },
+  { en:"Sometimes the most productive thing is rest.", kr:"때로는 쉬는 게 가장 생산적이다." },
+  { en:"Slow down and everything you are chasing will come around.", kr:"천천히 가면, 쫓던 것들이 다가온다." },
+  { en:"You can't pour from an empty cup.", kr:"빈 컵에서는 따를 게 없다." },
+  { en:"Self-care is not selfish.", kr:"자기돌봄은 이기적인 게 아니다." },
+  { en:"Rest when you're weary, refresh and renew yourself.", kr:"지치면 쉬고, 새롭게 채우자." },
+  { en:"Peace begins with a smile.", kr:"평화는 미소에서 시작된다." },
+  { en:"Almost everything works again if you give it some time.", kr:"거의 모든 것은 시간을 주면 다시 나아진다." },
+  { en:"Calm mind brings inner strength.", kr:"차분한 마음이 내면의 힘을 만든다." },
+  { en:"Silence is sometimes the best answer.", kr:"침묵이 때론 최선의 답이다." },
+  { en:"Breathe, this too shall pass.", kr:"숨 쉬어요, 이 또한 지나갈 거예요." },
+  { en:"Gratitude turns what we have into enough.", kr:"감사는 가진 것을 충분한 것으로 만든다." },
+  { en:"Enjoy the little things in life.", kr:"삶의 작은 것들을 즐기자." },
+  { en:"Count your blessings, not your problems.", kr:"문제가 아니라 감사할 일을 세어보자." },
+  { en:"Gratitude is the healthiest of all human emotions.", kr:"감사는 인간 감정 중 가장 건강한 것이다." },
+  { en:"Appreciate what you have before it becomes what you had.", kr:"잃기 전에, 가진 것을 소중히 여기자." },
+  { en:"A grateful heart is a magnet for miracles.", kr:"감사하는 마음은 기적을 끌어당긴다." },
+  { en:"Today, be grateful for the small things.", kr:"오늘은 작은 것들에 감사해보자." },
+  { en:"Gratitude changes everything.", kr:"감사가 모든 것을 바꾼다." },
+  { en:"Curiosity is the wick in the candle of learning.", kr:"호기심은 배움이라는 촛불의 심지다." },
+  { en:"Stay hungry, stay foolish.", kr:"늘 갈망하고, 우직하게." },
+  { en:"The important thing is not to stop questioning.", kr:"중요한 건 질문을 멈추지 않는 것." },
+  { en:"Learning never exhausts the mind.", kr:"배움은 마음을 지치게 하지 않는다." },
+  { en:"An investment in knowledge pays the best interest.", kr:"지식에 대한 투자가 최고의 이자를 낸다." },
+  { en:"Curiosity leads to the best discoveries.", kr:"호기심이 최고의 발견으로 이어진다." },
+  { en:"Ask questions, you'll find answers.", kr:"질문하면, 답을 찾게 된다." },
+  { en:"Creativity is intelligence having fun.", kr:"창의성은 즐겁게 노는 지능이다." },
+  { en:"Every artist was first an amateur.", kr:"모든 예술가도 처음엔 아마추어였다." },
+  { en:"You can't use up creativity.", kr:"창의성은 써도 없어지지 않는다." },
+  { en:"The more you use it, the more you have.", kr:"쓰면 쓸수록 더 많아진다." },
+  { en:"Think outside the box.", kr:"틀 밖에서 생각하자." },
+  { en:"Imagination is more important than knowledge.", kr:"상상력이 지식보다 중요하다." },
+  { en:"Creativity takes courage.", kr:"창의성에는 용기가 필요하다." },
+  { en:"Confidence is silent, insecurities are loud.", kr:"자신감은 조용하고, 불안은 시끄럽다." },
+  { en:"Believe in yourself and all that you are.", kr:"자기 자신과 자신의 가능성을 믿자." },
+  { en:"You are enough just as you are.", kr:"지금 모습 그대로도 충분하다." },
+  { en:"Self-doubt is the biggest enemy of progress.", kr:"자기 의심이 전진의 가장 큰 적이다." },
+  { en:"Trust yourself, you know more than you think.", kr:"자신을 믿자, 생각보다 많이 알고 있다." },
+  { en:"Confidence comes from preparation.", kr:"자신감은 준비에서 나온다." },
+  { en:"Nobody can make you feel inferior without consent.", kr:"동의 없이는 누구도 나를 열등하게 만들 수 없다." },
+  { en:"Teamwork makes the dream work.", kr:"팀워크가 꿈을 이뤄낸다." },
+  { en:"Alone we can do so little, together so much.", kr:"혼자면 조금, 함께면 많이 할 수 있다." },
+  { en:"Coming together is a beginning, working together is success.", kr:"모이는 건 시작, 함께 일하는 건 성공이다." },
+  { en:"None of us is as smart as all of us.", kr:"우리 모두를 합친 것보다 똑똑한 개인은 없다." },
+  { en:"Great things in business are never done by one person.", kr:"큰일은 한 사람이 해내는 게 아니다." },
+  { en:"If you want to go fast, go alone.", kr:"빨리 가려면 혼자 가고," },
+  { en:"If you want to go far, go together.", kr:"멀리 가려면 함께 가라." },
+  { en:"Time is what we want most, but use worst.", kr:"시간은 가장 원하지만, 가장 함부로 쓰는 것." },
+  { en:"Lost time is never found again.", kr:"잃어버린 시간은 다시 찾을 수 없다." },
+  { en:"Time you enjoy wasting was not wasted.", kr:"즐겁게 흘려보낸 시간은 낭비가 아니다." },
+  { en:"The key is not spending time, but investing it.", kr:"시간을 쓰는 게 아니라 투자하는 것." },
+  { en:"Yesterday is gone, tomorrow has not yet come.", kr:"어제는 갔고, 내일은 아직 오지 않았다." },
+  { en:"We have only today, let us begin.", kr:"우리에겐 오늘만 있으니, 시작하자." },
+  { en:"Until we have begun, all things are hard.", kr:"시작하기 전까지는 모든 게 어렵다." },
+  { en:"A journey of a thousand miles begins with one step.", kr:"천 리 길도 한 걸음부터." },
+  { en:"The best time to start was yesterday, the next best is now.", kr:"최적의 때는 어제였고, 차선은 지금이다." },
+  { en:"Begin anywhere.", kr:"어디서든 시작하라." },
+  { en:"Just start.", kr:"일단 시작하라." },
+  { en:"Getting started is the hardest part.", kr:"시작이 가장 어렵다." },
+  { en:"A journey is best measured in friends, not miles.", kr:"여정은 거리보다 함께한 사람으로 잰다." },
+  { en:"Resilience is accepting your new reality.", kr:"회복력은 새로운 현실을 받아들이는 것." },
+  { en:"Tough times never last, tough people do.", kr:"힘든 시절은 지나가도, 강한 사람은 남는다." },
+  { en:"Rock bottom became the solid foundation.", kr:"바닥이 튼튼한 기반이 되었다." },
+  { en:"When you go through hardship, keep going.", kr:"고난 속에서도, 계속 나아가라." },
+  { en:"Storms make trees take deeper roots.", kr:"폭풍이 나무 뿌리를 더 깊게 만든다." },
+  { en:"Out of difficulties grow miracles.", kr:"어려움 속에서 기적이 자란다." },
+  { en:"The oak fought the wind and was broken.", kr:"참나무는 바람과 싸우다 부러졌지만," },
+  { en:"the willow bent and survived.", kr:"버드나무는 휘어져 살아남았다." },
+  { en:"What doesn't kill you makes you stronger.", kr:"죽지 않을 만큼의 시련은 강하게 만든다." },
+  { en:"Every adversity carries the seed of equal benefit.", kr:"모든 역경은 그만큼의 이로움을 품고 있다." },
+  { en:"You may have to fight a battle more than once to win.", kr:"승리하려면 같은 싸움을 여러 번 해야 할 때도 있다." },
+  { en:"Kindness is a language the deaf can hear.", kr:"친절은 귀 먹은 이도 들을 수 있는 언어다." },
+  { en:"Be the reason someone smiles today.", kr:"오늘, 누군가를 웃게 하는 이유가 되자." },
+  { en:"No act of kindness is ever wasted.", kr:"친절은 결코 헛되지 않는다." },
+  { en:"A warm smile is the universal language.", kr:"따뜻한 미소는 만국 공통어다." },
+  { en:"Carry out a random act of kindness today.", kr:"오늘 뜻밖의 친절 하나를 베풀어보자." },
+  { en:"Be kind whenever possible, it is always possible.", kr:"가능하면 친절하라, 언제나 가능하다." },
+  { en:"Patience is not the ability to wait.", kr:"인내는 기다리는 능력이 아니라," },
+  { en:"but how you act while waiting.", kr:"기다리는 동안 어떻게 행동하느냐다." },
+  { en:"Good things come to those who wait.", kr:"좋은 일은 기다리는 사람에게 온다." },
+  { en:"Patience is bitter, but its fruit is sweet.", kr:"인내는 쓰지만 그 열매는 달다." },
+  { en:"Adopt the pace of nature, patience is her secret.", kr:"자연의 속도를 따르자, 인내가 자연의 비결이다." },
+  { en:"Slow and steady wins the race.", kr:"천천히 그리고 꾸준함이 경주를 이긴다." },
+  { en:"Rivers know this: there is no hurry.", kr:"강물은 안다, 서두를 필요가 없다는 걸." },
+  { en:"Trust the timing of your life.", kr:"내 삶의 타이밍을 믿자." },
+  { en:"An ounce of practice is worth a ton of theory.", kr:"한 줌의 실천이 한 트럭의 이론보다 낫다." },
+  { en:"Learning by doing.", kr:"하면서 배운다." },
+  { en:"The only way to learn is to do.", kr:"배우는 유일한 길은 해보는 것." },
+  { en:"Experience is the best teacher.", kr:"경험이 최고의 스승이다." },
+  { en:"Fail fast, learn faster.", kr:"빨리 실패하고, 더 빨리 배우자." },
+  { en:"Mistakes are proof you are trying.", kr:"실수는 시도하고 있다는 증거다." },
+  { en:"There is no failure, only feedback.", kr:"실패는 없다, 피드백만 있을 뿐." },
+  { en:"Every mistake is a lesson in disguise.", kr:"모든 실수는 변장한 교훈이다." },
+  { en:"Fall down seven times, get up eight.", kr:"일곱 번 넘어져도 여덟 번 일어서라." },
+  { en:"You miss 100% of the shots you don't take.", kr:"쏘지 않은 슛은 100% 빗나간다." },
+  { en:"The comeback is always stronger than the setback.", kr:"컴백은 늘 셋백보다 강하다." },
+  { en:"Turn your wounds into wisdom.", kr:"상처를 지혜로 바꾸자." },
+  { en:"Fear is temporary, regret is forever.", kr:"두려움은 잠깐, 후회는 영원하다." },
+  { en:"Feel the fear and do it anyway.", kr:"두려워도 그냥 해보자." },
+  { en:"Courage is not the absence of fear.", kr:"용기는 두려움이 없는 게 아니라," },
+  { en:"but moving forward despite it.", kr:"그럼에도 나아가는 것이다." },
+  { en:"Everything you want is on the other side of fear.", kr:"원하는 모든 건 두려움 너머에 있다." },
+  { en:"Bravery is a choice you make daily.", kr:"용기는 매일 내리는 선택이다." },
+  { en:"Life shrinks or expands with courage.", kr:"삶은 용기의 크기만큼 넓어지거나 좁아진다." },
+  { en:"A comfort zone is a beautiful place, but nothing grows there.", kr:"안전지대는 아름답지만, 아무것도 자라지 않는다." },
+  { en:"Change is hard at first, messy in the middle, gorgeous at the end.", kr:"변화는 처음엔 힘들고, 중간엔 혼란스럽고, 끝엔 아름답다." },
+  { en:"Growth begins at the end of your comfort zone.", kr:"성장은 안전지대의 끝에서 시작된다." },
+  { en:"What lies behind and before us are tiny matters.", kr:"과거와 미래는 작은 문제일 뿐," },
+  { en:"compared to what lies within us.", kr:"내면에 있는 것에 비하면." },
+  { en:"You were given this life because you are strong enough to live it.", kr:"이 삶을 견딜 만큼 강하기에 주어졌다." },
+  { en:"Life is 10% what happens, 90% how you react.", kr:"인생은 10%의 사건과 90%의 반응이다." },
+  { en:"Happiness is not by chance, but by choice.", kr:"행복은 우연이 아니라 선택이다." },
+  { en:"The purpose of life is to live it fully.", kr:"삶의 목적은 온전히 사는 것." },
+  { en:"Life is short, make every hair flip count.", kr:"인생은 짧으니, 매 순간을 소중히." },
+  { en:"In the middle of difficulty lies opportunity.", kr:"어려움 한가운데 기회가 있다." },
+  { en:"Keep your face to the sunshine.", kr:"얼굴을 늘 햇살 쪽으로 향하자." },
+  { en:"and you cannot see the shadow.", kr:"그러면 그림자는 보이지 않는다." },
+  { en:"Life is like riding a bicycle, keep moving to stay balanced.", kr:"인생은 자전거와 같아, 계속 움직여야 균형이 잡힌다." },
+  { en:"Not all who wander are lost.", kr:"방황하는 모든 이가 길을 잃은 건 아니다." },
+  { en:"Do more of what makes you happy.", kr:"나를 행복하게 하는 일을 더 하자." },
+  { en:"Everything happens for a reason.", kr:"모든 일에는 이유가 있다." },
+  { en:"Make each day your masterpiece.", kr:"하루하루를 걸작으로 만들자." },
+  { en:"Life is a gift, that's why it's called the present.", kr:"인생은 선물이라, 현재라 불린다." },
+  { en:"You only live once, but do it right.", kr:"인생은 한 번뿐, 제대로 살자." },
+  { en:"The only impossible journey is the one you never begin.", kr:"유일하게 불가능한 여정은 시작조차 안 한 여정이다." },
+  { en:"Do one thing every day that scares you.", kr:"매일 두려운 일 하나씩 해보자." },
+  { en:"Nothing is impossible, the word itself says I'm possible.", kr:"불가능은 없다, 그 단어 자체가 '나는 가능하다'라고 말한다." },
+  { en:"You are braver than you believe, stronger than you seem.", kr:"믿는 것보다 용감하고, 보이는 것보다 강하다." },
+  { en:"Smarter than you think.", kr:"생각보다 똑똑하다." },
+  { en:"Doubt kills more dreams than failure ever will.", kr:"실패보다 의심이 더 많은 꿈을 죽인다." },
+  { en:"Success is walking from failure to failure with no loss of enthusiasm.", kr:"성공은 열정을 잃지 않고 실패를 거듭 걷는 것." },
+  { en:"There are no shortcuts to any place worth going.", kr:"갈 만한 곳에 지름길은 없다." },
+  { en:"The best revenge is massive success.", kr:"최고의 복수는 엄청난 성공이다." },
+  { en:"Don't be pushed by your problems, be led by your dreams.", kr:"문제에 떠밀리지 말고, 꿈에 이끌리자." },
+  { en:"The distance between dreams and reality is called action.", kr:"꿈과 현실 사이의 거리를 행동이라 부른다." },
+  { en:"A dream doesn't become reality through magic.", kr:"꿈은 마법으로 이뤄지지 않고," },
+  { en:"it takes sweat, determination, and hard work.", kr:"땀과 결심과 노력으로 이뤄진다." },
+  { en:"Set your goals high, and don't stop till you get there.", kr:"목표는 높게, 도달할 때까지 멈추지 말자." },
+  { en:"If you can dream it, you can do it.", kr:"꿈꿀 수 있다면, 해낼 수 있다." },
+  { en:"Go as far as you can see, then you'll see further.", kr:"보이는 데까지 가면, 더 멀리 보이게 된다." },
+  { en:"All our dreams can come true if we pursue them.", kr:"꿈을 좇으면, 모든 꿈은 이루어질 수 있다." },
+  { en:"Ambition is the path to success.", kr:"야망은 성공으로 가는 길이다." },
+  { en:"Persistence is the path to success.", kr:"끈기는 성공으로 가는 길이다." },
+  { en:"It's not the load that breaks you down.", kr:"당신을 무너뜨리는 건 짐이 아니라," },
+  { en:"it's the way you carry it.", kr:"그 짐을 짊어지는 방식이다." },
+  { en:"Set your mind on a definite goal and observe how quickly the world stands aside.", kr:"확실한 목표를 세우면 세상이 길을 비켜준다." },
+  { en:"Ordinary people believe only in the possible.", kr:"보통 사람은 가능한 것만 믿지만," },
+  { en:"extraordinary people visualize the impossible.", kr:"비범한 사람은 불가능한 것을 그려본다." },
+  { en:"Champions keep playing until they get it right.", kr:"챔피언은 될 때까지 계속한다." },
+  { en:"You must expect great things of yourself before you can do them.", kr:"스스로 큰일을 기대해야 해낼 수 있다." },
+  { en:"The only way to do great work is to love what you do.", kr:"위대한 일을 하는 법은, 하는 일을 사랑하는 것." },
+  { en:"Setting goals is the first step in turning the invisible into visible.", kr:"목표를 세우는 건 보이지 않는 것을 보이게 하는 첫걸음이다." },
+  { en:"Do not wait, the time will never be just right.", kr:"기다리지 말자, 완벽한 때는 오지 않는다." }
 ];
 
 // 문자열을 시드로 한 간단한 결정적 해시 (같은 입력이면 항상 같은 값)
@@ -1495,6 +1970,70 @@ async function renderFortuneForDate(dateStr){
 }
 
 // 오늘의 영어 한마디: 2시간 단위로 랜덤하게 새로 뽑습니다 (같은 2시간 안에서는 유지돼요)
+// 배열을 무작위로 섞습니다 (Fisher–Yates)
+function shuffleArray(arr){
+  const a = arr.slice();
+  for(let i=a.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [a[i],a[j]] = [a[j],a[i]];
+  }
+  return a;
+}
+
+// 이번 주 월요일 날짜(YYYY-MM-DD)를 구합니다.
+function mondayOfWeek(d){
+  const date = new Date(d);
+  const day = date.getDay(); // 0=일,1=월,...
+  const diff = (day === 0 ? -6 : 1 - day);
+  date.setDate(date.getDate() + diff);
+  return dateToStr(date);
+}
+
+// 매주 월요일마다 문구 20개를 새로 뽑아서, 그 주 동안은 그 20개 안에서만
+// 랜덤하게 나오도록 합니다. (전체 문구는 3주에 걸쳐 겹치지 않게 다 쓰이고,
+// 그다음 다시 새로 섞여서 순환해요)
+const WEEKLY_QUOTE_COUNT = 20;
+async function getWeeklyQuoteSet(){
+  const weekKey = mondayOfWeek(new Date());
+  let weekly = await storageGet('engWeeklySet', null);
+  if(weekly && weekly.weekKey === weekKey) return weekly;
+
+  // 새로운 주: 전체 순환 커서에서 20개를 이어서 뽑습니다.
+  let cycle = await storageGet('engPoolCycle', null);
+  if(!cycle || !Array.isArray(cycle.order) || cycle.order.length !== ENGLISH_QUOTES.length){
+    cycle = { order: shuffleArray(ENGLISH_QUOTES.map((_,i)=>i)), cursor: 0 };
+  }
+  const indices = [];
+  while(indices.length < WEEKLY_QUOTE_COUNT){
+    if(cycle.cursor >= cycle.order.length){
+      cycle = { order: shuffleArray(ENGLISH_QUOTES.map((_,i)=>i)), cursor: 0 };
+    }
+    indices.push(cycle.order[cycle.cursor]);
+    cycle.cursor++;
+  }
+  await storageSet('engPoolCycle', cycle);
+
+  weekly = { weekKey, indices, order: shuffleArray(indices), pointer: 0 };
+  await storageSet('engWeeklySet', weekly);
+  return weekly;
+}
+
+async function getNextEnglishQuote(prevEn){
+  let weekly = await getWeeklyQuoteSet();
+  if(weekly.pointer >= weekly.order.length){
+    // 이번 주 20개를 다 보여줬으면, 이번 주 안에서 다시 섞어서 계속 사용합니다.
+    weekly = { ...weekly, order: shuffleArray(weekly.indices), pointer: 0 };
+  }
+  let idx = weekly.order[weekly.pointer];
+  if(prevEn && ENGLISH_QUOTES[idx].en === prevEn && weekly.pointer + 1 < weekly.order.length){
+    weekly.pointer++;
+    idx = weekly.order[weekly.pointer];
+  }
+  weekly.pointer++;
+  await storageSet('engWeeklySet', weekly);
+  return ENGLISH_QUOTES[idx];
+}
+
 async function renderEnglishQuote(){
   const now = new Date();
   const bucket = Math.floor(now.getHours() / 2);
@@ -1505,7 +2044,8 @@ async function renderEnglishQuote(){
   if(cached && cached.windowKey === windowKey){
     eq = cached.quote;
   } else {
-    eq = ENGLISH_QUOTES[Math.floor(Math.random() * ENGLISH_QUOTES.length)];
+    const prevEn = cached && cached.quote ? cached.quote.en : null;
+    eq = await getNextEnglishQuote(prevEn);
     await storageSet('engQuoteCache', { windowKey, quote: eq });
   }
   document.getElementById('engSentence').textContent = eq.en;
@@ -1808,12 +2348,12 @@ function escapeHtml(str){
 if(typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged){
   chrome.storage.onChanged.addListener((changes, area)=>{
     if(area !== 'local') return;
-    if(changes.personalTasks || changes.midLongTasks || changes.fursysPlannerData || changes.flexLeaveData || changes.annualLeave || changes.teamSchedule){
+    if(changes.personalTasks || changes.midLongTasks || changes.fursysPlannerData || changes.flexLeaveData || changes.annualLeave || changes.teamSchedule || changes.timelineColors){
       init();
     }
     // background.js가 직접 저장한 경우(스마트오피스/Flex 동기화)도 클라우드에 반영합니다.
     if(typeof scheduleCloudPush === 'function'){
-      ['personalTasks','midLongTasks','personalEvents','userProfile','fursysPlannerData','flexLeaveData'].forEach(k=>{
+      ['personalTasks','midLongTasks','personalEvents','userProfile','fursysPlannerData','flexLeaveData','timelineColors'].forEach(k=>{
         if(changes[k]) scheduleCloudPush(k);
       });
     }
@@ -1832,7 +2372,7 @@ const FIREBASE_API_KEY = "AIzaSyBLqYfI7c0bFpBhsKQxpvck5gR-6ZqKCL4";
 const FIRESTORE_DOC_URL =
   `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/planners/girang?key=${FIREBASE_API_KEY}`;
 
-const CLOUD_SYNC_KEYS = ['personalTasks', 'midLongTasks', 'personalEvents', 'userProfile', 'fursysPlannerData', 'flexLeaveData'];
+const CLOUD_SYNC_KEYS = ['personalTasks', 'midLongTasks', 'personalEvents', 'userProfile', 'fursysPlannerData', 'flexLeaveData', 'timelineColors'];
 let lastAppliedCloudTimestamp = null;
 let cloudPushTimer = null;
 
