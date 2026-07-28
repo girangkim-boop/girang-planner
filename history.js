@@ -134,7 +134,8 @@ function mergeEventTasks(tasks){
 
 function render(){
   const term = document.getElementById('searchInput').value.trim().toLowerCase();
-  let tasks = ALL_TASKS.slice();
+  // 스마트오피스 회의에서 자동 생성된 업무는 이력관리에서 제외합니다.
+  let tasks = ALL_TASKS.filter(t => !t.fromMeetingKey);
   if(term){
     tasks = tasks.filter(t => (t.text||'').toLowerCase().includes(term));
   }
