@@ -2120,8 +2120,10 @@ async function renderEnglishQuote(){
   const windowKey = `${todayStr()}-${bucket}`;
 
   const cached = await storageGet('engQuoteCache', null);
+  // 캐시된 문구가 예전(수정 전) 데이터일 수 있으니, 현재 목록에 실제로 있는 문구인지 확인합니다.
+  const cachedIsValid = cached && cached.quote && ENGLISH_QUOTES.some(q => q.en === cached.quote.en);
   let eq;
-  if(cached && cached.windowKey === windowKey){
+  if(cachedIsValid && cached.windowKey === windowKey){
     eq = cached.quote;
   } else {
     const prevEn = cached && cached.quote ? cached.quote.en : null;
