@@ -2076,7 +2076,9 @@ const WEEKLY_QUOTE_COUNT = 20;
 async function getWeeklyQuoteSet(){
   const weekKey = mondayOfWeek(new Date());
   let weekly = await storageGet('engWeeklySet', null);
-  if(weekly && weekly.weekKey === weekKey) return weekly;
+  // 문구 데이터 개수가 바뀌면(병합/삭제 등) 예전에 저장된 인덱스가 범위를 벗어날 수 있어요.
+  const weeklyStillValid = weekly && Array.isArray(weekly.indices) && weekly.indices.every(i => i < ENGLISH_QUOTES.length);
+  if(weeklyStillValid && weekly.weekKey === weekKey) return weekly;
 
   // 새로운 주: 전체 순환 커서에서 20개를 이어서 뽑습니다.
   let cycle = await storageGet('engPoolCycle', null);
