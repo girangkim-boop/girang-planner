@@ -2435,9 +2435,10 @@ if(typeof chrome !== 'undefined' && chrome.storage && chrome.storage.onChanged){
     if(changes.personalTasks || changes.midLongTasks || changes.fursysPlannerData || changes.flexLeaveData || changes.annualLeave || changes.teamSchedule || changes.timelineColors){
       init();
     }
-    // background.js가 직접 저장한 경우(스마트오피스/Flex 동기화)도 클라우드에 반영합니다.
+    // background.js가 직접 저장한 값(회의/연차 등)도 클라우드 반영을 시도합니다.
+    // 실제로 업로드할지는 scheduleCloudPush 내부에서 판단합니다(확장 프로그램=PC만 업로드).
     if(typeof scheduleCloudPush === 'function'){
-      ['personalTasks','midLongTasks','personalEvents','userProfile','fursysPlannerData','flexLeaveData','timelineColors'].forEach(k=>{
+      ['personalTasks','midLongTasks','personalEvents','userProfile','timelineColors','fursysPlannerData','flexLeaveData'].forEach(k=>{
         if(changes[k]) scheduleCloudPush(k);
       });
     }
@@ -2456,12 +2457,23 @@ const FIREBASE_API_KEY = "AIzaSyBLqYfI7c0bFpBhsKQxpvck5gR-6ZqKCL4";
 const FIRESTORE_DOC_URL =
   `https://firestore.googleapis.com/v1/projects/${FIREBASE_PROJECT_ID}/databases/(default)/documents/planners/girang?key=${FIREBASE_API_KEY}`;
 
-const CLOUD_SYNC_KEYS = ['personalTasks', 'midLongTasks', 'personalEvents', 'userProfile', 'fursysPlannerData', 'flexLeaveData', 'timelineColors'];
+// 개인 데이터(할 일/과제/일정 등)는 기기 양방향으로 동기화합니다.
+const CLOUD_SYNC_KEYS = ['personalTasks', 'midLongTasks', 'personalEvents', 'userProfile', 'timelineColors'];
+
+// ⚠️ fursysPlannerData / flexLeaveData(회의·연차 자동 동기화 결과)는 방향을 다르게 둡니다.
+// - 크롬 확장 프로그램(PC, background.js가 실제로 도는 곳)은 자기 로컬 값이 항상 진실이므로
+//   클라우드에 "업로드"만 하고, 클라우드에서 "받아오지"는 않습니다. (안 그러면 PC의 최신
+//   동기화 결과가, 플래너 탭이 방치돼 잠깐 멈춰있던 사이의 오래된 클라우드 값으로 되돌아가버립니다.)
+// - 태블릿처럼 그냥 웹페이지로 열어보는 환경은 background.js가 아예 돌 수 없으니, 회의/연차를
+//   보려면 클라우드에서 "받아오기"만 해야 합니다.
+const SYNCED_STATE_KEYS = ['fursysPlannerData', 'flexLeaveData'];
 let lastAppliedCloudTimestamp = null;
 let cloudPushTimer = null;
 
 function scheduleCloudPush(key){
-  if(!CLOUD_SYNC_KEYS.includes(key)) return;
+  const isPersonal = CLOUD_SYNC_KEYS.includes(key);
+  const isSyncedStateFromExtension = hasChromeStorage && SYNCED_STATE_KEYS.includes(key);
+  if(!isPersonal && !isSyncedStateFromExtension) return;
   if(cloudPushTimer) clearTimeout(cloudPushTimer);
   cloudPushTimer = setTimeout(()=>{ pushToCloud(); }, 1500);
 }
@@ -2494,10 +2506,21 @@ async function pullFromCloud(){
     if(lastAppliedCloudTimestamp && remoteTs <= lastAppliedCloudTimestamp) return; // 이미 반영된 데이터
 
     let changed = false;
+    // 개인 데이터는 어느 기기에서든 받아옵니다.
     for(const key of CLOUD_SYNC_KEYS){
       if(data[key] !== undefined && data[key] !== null){
         await storageSet(key, data[key]);
         changed = true;
+      }
+    }
+    // 회의/연차 데이터는 "확장 프로그램이 아닌 환경(태블릿 등 웹페이지)"에서만 받아옵니다.
+    // 확장 프로그램(PC)은 background.js가 직접 최신화하므로 클라우드 값을 덮어쓰지 않습니다.
+    if(!hasChromeStorage){
+      for(const key of SYNCED_STATE_KEYS){
+        if(data[key] !== undefined && data[key] !== null){
+          await storageSet(key, data[key]);
+          changed = true;
+        }
       }
     }
     lastAppliedCloudTimestamp = remoteTs;
@@ -2514,6 +2537,13 @@ async function pushToCloud(){
     for(const key of CLOUD_SYNC_KEYS){
       const value = await storageGet(key, null);
       fields[key] = { stringValue: JSON.stringify(value) };
+    }
+    // 회의/연차 데이터는 확장 프로그램(PC, background.js가 도는 곳)에서만 업로드합니다.
+    if(hasChromeStorage){
+      for(const key of SYNCED_STATE_KEYS){
+        const value = await storageGet(key, null);
+        fields[key] = { stringValue: JSON.stringify(value) };
+      }
     }
     const res = await fetch(FIRESTORE_DOC_URL, {
       method: 'PATCH',
